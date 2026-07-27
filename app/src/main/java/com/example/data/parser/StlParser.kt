@@ -3,9 +3,13 @@ package com.example.data.parser
 import com.example.ui.render3d.BoundingBox3D
 import com.example.ui.render3d.Triangle3D
 import com.example.ui.render3d.Vector3D
+import java.io.BufferedInputStream
+import java.io.BufferedReader
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
 import kotlin.math.abs
 
 data class StlModel(
@@ -20,36 +24,45 @@ data class StlModel(
 object StlParser {
 
     fun parse(fileName: String, inputStream: InputStream): StlModel {
-        val bytes = inputStream.readBytes()
-        val streamLength = bytes.size
+        val bufferedStream = BufferedInputStream(inputStream, 65536)
+        bufferedStream.mark(256)
 
-        // Check if binary or ASCII
-        val isAscii = if (streamLength > 84) {
-            val headerString = String(bytes, 0, 80.coerceAtMost(streamLength), Charsets.US_ASCII).lowercase()
-            headerString.startsWith("solid") && !isLikelyBinary(bytes)
-        } else false
+        val headerBytes = ByteArray(80)
+        val readHeaderLen = bufferedStream.read(headerBytes, 0, 80)
+        val countBytes = ByteArray(4)
+        val readCountLen = bufferedStream.read(countBytes, 0, 4)
+
+        var isAscii = false
+        if (readHeaderLen >= 5) {
+            val headerStr = String(headerBytes, 0, readHeaderLen.coerceAtMost(80), StandardCharsets.US_ASCII).lowercase()
+            if (headerStr.startsWith("solid")) {
+                // If it starts with "solid", check if count is suspiciously huge or if ASCII tokens exist
+                val testBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
+                val triCount = testBuffer.int
+                if (triCount <= 0 || triCount > 20_000_000) {
+                    isAscii = true
+                }
+            }
+        }
+
+        bufferedStream.reset()
 
         return if (isAscii) {
-            parseAscii(fileName, String(bytes, Charsets.UTF_8))
+            parseAscii(fileName, bufferedStream)
         } else {
-            parseBinary(fileName, bytes)
+            parseBinary(fileName, bufferedStream)
         }
     }
 
-    private fun isLikelyBinary(bytes: ByteArray): Boolean {
-        if (bytes.size < 84) return false
-        val buffer = ByteBuffer.wrap(bytes, 80, 4).order(ByteOrder.LITTLE_ENDIAN)
-        val numTriangles = buffer.int
-        val expectedSize = 84 + numTriangles * 50
-        return abs(bytes.size - expectedSize) < 100
-    }
+    private fun parseBinary(fileName: String, inputStream: InputStream): StlModel {
+        val header = ByteArray(80)
+        inputStream.read(header, 0, 80)
+        val countBytes = ByteArray(4)
+        inputStream.read(countBytes, 0, 4)
+        val countBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
+        val numTriangles = countBuffer.int.coerceAtLeast(0)
 
-    private fun parseBinary(fileName: String, bytes: ByteArray): StlModel {
-        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.position(80) // Skip 80 byte header
-        val count = buffer.int
-
-        val triangles = ArrayList<Triangle3D>(count.coerceAtMost(100000))
+        val triangles = ArrayList<Triangle3D>(numTriangles.coerceAtMost(100000))
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -58,26 +71,31 @@ object StlParser {
         var totalArea = 0f
         var totalVolume = 0f
 
-        for (i in 0 until count) {
-            if (buffer.remaining() < 50) break
+        val recordBuffer = ByteArray(50)
+        val byteBuf = ByteBuffer.wrap(recordBuffer).order(ByteOrder.LITTLE_ENDIAN)
 
-            val nx = buffer.float
-            val ny = buffer.float
-            val nz = buffer.float
+        for (i in 0 until numTriangles) {
+            var readTotal = 0
+            while (readTotal < 50) {
+                val r = inputStream.read(recordBuffer, readTotal, 50 - readTotal)
+                if (r < 0) break
+                readTotal += r
+            }
+            if (readTotal < 50) break
 
-            val v1x = buffer.float; val v1y = buffer.float; val v1z = buffer.float
-            val v2x = buffer.float; val v2y = buffer.float; val v2z = buffer.float
-            val v3x = buffer.float; val v3y = buffer.float; val v3z = buffer.float
-
-            buffer.short // attribute byte count
-
-            val v1 = Vector3D(v1x, v1y, v1z)
-            val v2 = Vector3D(v2x, v2y, v2z)
-            val v3 = Vector3D(v3x, v3y, v3z)
+            byteBuf.rewind()
+            val nx = byteBuf.float; val ny = byteBuf.float; val nz = byteBuf.float
+            val v1x = byteBuf.float; val v1y = byteBuf.float; val v1z = byteBuf.float
+            val v2x = byteBuf.float; val v2y = byteBuf.float; val v2z = byteBuf.float
+            val v3x = byteBuf.float; val v3y = byteBuf.float; val v3z = byteBuf.float
 
             minX = minOf(minX, v1x, v2x, v3x); maxX = maxOf(maxX, v1x, v2x, v3x)
             minY = minOf(minY, v1y, v2y, v3y); maxY = maxOf(maxY, v1y, v2y, v3y)
             minZ = minOf(minZ, v1z, v2z, v3z); maxZ = maxOf(maxZ, v1z, v2z, v3z)
+
+            val v1 = Vector3D(v1x, v1y, v1z)
+            val v2 = Vector3D(v2x, v2y, v2z)
+            val v3 = Vector3D(v3x, v3y, v3z)
 
             val normal = if (nx == 0f && ny == 0f && nz == 0f) {
                 (v2 - v1).cross(v3 - v1).normalize()
@@ -85,12 +103,10 @@ object StlParser {
                 Vector3D(nx, ny, nz).normalize()
             }
 
-            // Area calculation
             val cross = (v2 - v1).cross(v3 - v1)
             val area = cross.length() * 0.5f
             totalArea += area
 
-            // Signed volume calculation (Divergence theorem)
             val v = (v1.x * (v2.y * v3.z - v3.y * v2.z) +
                     v2.x * (v3.y * v1.z - v1.y * v3.z) +
                     v3.x * (v1.y * v2.z - v2.y * v1.z)) / 6f
@@ -111,8 +127,8 @@ object StlParser {
         )
     }
 
-    private fun parseAscii(fileName: String, content: String): StlModel {
-        val lines = content.lines()
+    private fun parseAscii(fileName: String, inputStream: InputStream): StlModel {
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
         val triangles = mutableListOf<Triangle3D>()
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
@@ -120,9 +136,10 @@ object StlParser {
         var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
 
         var currentNormal = Vector3D(0f, 0f, 1f)
-        val vertices = mutableListOf<Vector3D>()
+        val vertices = ArrayList<Vector3D>(3)
 
-        for (line in lines) {
+        var line = reader.readLine()
+        while (line != null) {
             val trimmed = line.trim().lowercase()
             if (trimmed.startsWith("facet normal")) {
                 val parts = trimmed.split(Regex("""\s+"""))
@@ -151,6 +168,7 @@ object StlParser {
                 }
                 vertices.clear()
             }
+            line = reader.readLine()
         }
 
         if (minX > maxX) { minX = 0f; maxX = 10f; minY = 0f; maxY = 10f; minZ = 0f; maxZ = 10f }

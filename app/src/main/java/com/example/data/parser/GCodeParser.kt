@@ -2,6 +2,10 @@ package com.example.data.parser
 
 import com.example.ui.render3d.BoundingBox3D
 import com.example.ui.render3d.Vector3D
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -45,8 +49,13 @@ data class ToolpathModel(
 object GCodeParser {
 
     fun parse(fileName: String, content: String): ToolpathModel {
-        val lines = content.lines()
+        return parseStream(fileName, content.byteInputStream())
+    }
+
+    fun parseStream(fileName: String, inputStream: InputStream): ToolpathModel {
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
         val segments = mutableListOf<ToolpathSegment>()
+        val rawLinesPreview = mutableListOf<String>()
 
         var currX = 0f
         var currY = 0f
@@ -77,125 +86,133 @@ object GCodeParser {
         var maxS = currRpm
         val toolsSet = mutableSetOf<Int>()
 
-        for ((idx, line) in lines.withIndex()) {
-            val trimmed = line.uppercase().trim().split(";")[0].split("(")[0].trim()
-            if (trimmed.isEmpty()) continue
+        var lineNo = 0
+        var lineString: String? = reader.readLine()
 
-            val lineNo = idx + 1
-
-            // Check Units & Modes
-            if (trimmed.contains("G20")) isMetric = false
-            if (trimmed.contains("G21")) isMetric = true
-            if (trimmed.contains("G90")) isAbsolute = true
-            if (trimmed.contains("G91")) isAbsolute = false
-
-            // Extract Feed, RPM, Tool
-            val feedMatch = Regex("""F([0-9.]+)""").find(trimmed)
-            if (feedMatch != null) {
-                currFeed = feedMatch.groupValues[1].toFloatOrNull() ?: currFeed
-                if (currFeed > maxF) maxF = currFeed
+        while (lineString != null) {
+            lineNo++
+            if (lineNo <= 1000) {
+                rawLinesPreview.add(lineString)
             }
 
-            val rpmMatch = Regex("""S([0-9.]+)""").find(trimmed)
-            if (rpmMatch != null) {
-                currRpm = rpmMatch.groupValues[1].toFloatOrNull() ?: currRpm
-                if (currRpm > maxS) maxS = currRpm
-            }
+            val commentIdx = lineString.indexOf(';').let { if (it >= 0) it else lineString.indexOf('(') }
+            val cleanLine = (if (commentIdx >= 0) lineString.substring(0, commentIdx) else lineString).uppercase().trim()
 
-            val toolMatch = Regex("""T([0-9]+)""").find(trimmed)
-            if (toolMatch != null) {
-                currTool = toolMatch.groupValues[1].toIntOrNull() ?: currTool
-                toolsSet.add(currTool)
-            }
+            if (cleanLine.isNotEmpty()) {
+                if (cleanLine.contains("G20")) isMetric = false
+                if (cleanLine.contains("G21")) isMetric = true
+                if (cleanLine.contains("G90")) isAbsolute = true
+                if (cleanLine.contains("G91")) isAbsolute = false
 
-            // Motion commands
-            var newMotion = currMotion
-            if (Regex("""\bG0*0\b""").containsMatchIn(trimmed)) newMotion = MotionType.RAPID_G0
-            else if (Regex("""\bG0*1\b""").containsMatchIn(trimmed)) newMotion = MotionType.CUTTING_G1
-            else if (Regex("""\bG0*2\b""").containsMatchIn(trimmed)) newMotion = MotionType.ARC_CW_G2
-            else if (Regex("""\bG0*3\b""").containsMatchIn(trimmed)) newMotion = MotionType.ARC_CCW_G3
-
-            currMotion = newMotion
-
-            val xVal = Regex("""X(-?[0-9.]+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull()
-            val yVal = Regex("""Y(-?[0-9.]+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull()
-            val zVal = Regex("""Z(-?[0-9.]+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull()
-
-            val iVal = Regex("""I(-?[0-9.]+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-            val jVal = Regex("""J(-?[0-9.]+)""").find(trimmed)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-
-            if (xVal != null || yVal != null || zVal != null) {
-                var targetX = if (xVal != null) (if (isAbsolute) xVal else currX + xVal) else currX
-                var targetY = if (yVal != null) (if (isAbsolute) yVal else currY + yVal) else currY
-                var targetZ = if (zVal != null) (if (isAbsolute) zVal else currZ + zVal) else currZ
-
-                // Convert inch to mm if G20
-                if (!isMetric) {
-                    targetX *= 25.4f
-                    targetY *= 25.4f
-                    targetZ *= 25.4f
+                val fVal = extractFloat(cleanLine, 'F')
+                if (fVal != null) {
+                    currFeed = fVal
+                    if (currFeed > maxF) maxF = currFeed
                 }
 
-                val startVec = Vector3D(currX, currY, currZ)
-                val endVec = Vector3D(targetX, targetY, targetZ)
+                val sVal = extractFloat(cleanLine, 'S')
+                if (sVal != null) {
+                    currRpm = sVal
+                    if (currRpm > maxS) maxS = currRpm
+                }
 
-                var segLength = (endVec - startVec).length()
-                var arcPts = emptyList<Vector3D>()
+                val tVal = extractFloat(cleanLine, 'T')?.toInt()
+                if (tVal != null) {
+                    currTool = tVal
+                    toolsSet.add(currTool)
+                }
 
-                if (currMotion == MotionType.ARC_CW_G2 || currMotion == MotionType.ARC_CCW_G3) {
-                    val centerX = currX + (if (!isMetric) iVal * 25.4f else iVal)
-                    val centerY = currY + (if (!isMetric) jVal * 25.4f else jVal)
-                    val radius = sqrt((currX - centerX) * (currX - centerX) + (currY - centerY) * (currY - centerY))
+                // Motion types
+                if (cleanLine.contains("G00") || cleanLine.contains("G0 ") || cleanLine.endsWith("G0") || cleanLine.contains("G0X") || cleanLine.contains("G0Y") || cleanLine.contains("G0Z")) {
+                    currMotion = MotionType.RAPID_G0
+                } else if (cleanLine.contains("G01") || cleanLine.contains("G1 ") || cleanLine.endsWith("G1") || cleanLine.contains("G1X") || cleanLine.contains("G1Y") || cleanLine.contains("G1Z")) {
+                    currMotion = MotionType.CUTTING_G1
+                } else if (cleanLine.contains("G02") || cleanLine.contains("G2 ") || cleanLine.endsWith("G2")) {
+                    currMotion = MotionType.ARC_CW_G2
+                } else if (cleanLine.contains("G03") || cleanLine.contains("G3 ") || cleanLine.endsWith("G3")) {
+                    currMotion = MotionType.ARC_CCW_G3
+                }
 
-                    val startAngle = atan2(currY - centerY, currX - centerX)
-                    var endAngle = atan2(targetY - centerY, targetX - centerX)
+                val xVal = extractFloat(cleanLine, 'X')
+                val yVal = extractFloat(cleanLine, 'Y')
+                val zVal = extractFloat(cleanLine, 'Z')
 
-                    val isCw = currMotion == MotionType.ARC_CW_G2
-                    if (isCw && endAngle >= startAngle) endAngle -= (2 * PI).toFloat()
-                    if (!isCw && endAngle <= startAngle) endAngle += (2 * PI).toFloat()
+                val iVal = extractFloat(cleanLine, 'I') ?: 0f
+                val jVal = extractFloat(cleanLine, 'J') ?: 0f
 
-                    val steps = 12
-                    val arcList = mutableListOf<Vector3D>()
-                    for (step in 0..steps) {
-                        val t = step / steps.toFloat()
-                        val ang = startAngle + t * (endAngle - startAngle)
-                        val ax = centerX + radius * cos(ang)
-                        val ay = centerY + radius * sin(ang)
-                        val az = currZ + t * (targetZ - currZ)
-                        arcList.add(Vector3D(ax, ay, az))
-                        updateBounds(ax, ay, az)
+                if (xVal != null || yVal != null || zVal != null) {
+                    var targetX = if (xVal != null) (if (isAbsolute) xVal else currX + xVal) else currX
+                    var targetY = if (yVal != null) (if (isAbsolute) yVal else currY + yVal) else currY
+                    var targetZ = if (zVal != null) (if (isAbsolute) zVal else currZ + zVal) else currZ
+
+                    if (!isMetric) {
+                        targetX *= 25.4f
+                        targetY *= 25.4f
+                        targetZ *= 25.4f
                     }
-                    arcPts = arcList
-                    segLength = abs(endAngle - startAngle) * radius
-                } else {
-                    updateBounds(targetX, targetY, targetZ)
-                }
 
-                totalLength += segLength
-                // Speed time calculation (feed in mm/min, rapid speed assumed ~ 3000 mm/min)
-                val speedMmMin = if (currMotion == MotionType.RAPID_G0) 3000f else currFeed.coerceAtLeast(100f)
-                val estSecs = (segLength / speedMmMin) * 60f
-                totalEstSeconds += estSecs
+                    val startVec = Vector3D(currX, currY, currZ)
+                    val endVec = Vector3D(targetX, targetY, targetZ)
 
-                segments.add(
-                    ToolpathSegment(
-                        lineNumber = lineNo,
-                        rawText = trimmed,
-                        start = startVec,
-                        end = endVec,
-                        motionType = currMotion,
-                        feedRate = currFeed,
-                        rpm = currRpm,
-                        toolNumber = currTool,
-                        lengthMm = segLength,
-                        arcPoints = arcPts
+                    var segLength = (endVec - startVec).length()
+                    var arcPts = emptyList<Vector3D>()
+
+                    if (currMotion == MotionType.ARC_CW_G2 || currMotion == MotionType.ARC_CCW_G3) {
+                        val centerX = currX + (if (!isMetric) iVal * 25.4f else iVal)
+                        val centerY = currY + (if (!isMetric) jVal * 25.4f else jVal)
+                        val radius = sqrt((currX - centerX) * (currX - centerX) + (currY - centerY) * (currY - centerY))
+
+                        val startAngle = atan2(currY - centerY, currX - centerX)
+                        var endAngle = atan2(targetY - centerY, targetX - centerX)
+
+                        val isCw = currMotion == MotionType.ARC_CW_G2
+                        if (isCw && endAngle >= startAngle) endAngle -= (2 * PI).toFloat()
+                        if (!isCw && endAngle <= startAngle) endAngle += (2 * PI).toFloat()
+
+                        val steps = 8
+                        val arcList = ArrayList<Vector3D>(steps + 1)
+                        for (step in 0..steps) {
+                            val t = step / steps.toFloat()
+                            val ang = startAngle + t * (endAngle - startAngle)
+                            val ax = centerX + radius * cos(ang)
+                            val ay = centerY + radius * sin(ang)
+                            val az = currZ + t * (targetZ - currZ)
+                            arcList.add(Vector3D(ax, ay, az))
+                            updateBounds(ax, ay, az)
+                        }
+                        arcPts = arcList
+                        segLength = abs(endAngle - startAngle) * radius
+                    } else {
+                        updateBounds(targetX, targetY, targetZ)
+                    }
+
+                    totalLength += segLength
+                    val speedMmMin = if (currMotion == MotionType.RAPID_G0) 3000f else currFeed.coerceAtLeast(100f)
+                    val estSecs = (segLength / speedMmMin) * 60f
+                    totalEstSeconds += estSecs
+
+                    segments.add(
+                        ToolpathSegment(
+                            lineNumber = lineNo,
+                            rawText = if (lineNo <= 1000) cleanLine else "",
+                            start = startVec,
+                            end = endVec,
+                            motionType = currMotion,
+                            feedRate = currFeed,
+                            rpm = currRpm,
+                            toolNumber = currTool,
+                            lengthMm = segLength,
+                            arcPoints = arcPts
+                        )
                     )
-                )
 
-                currX = targetX
-                currY = targetY
-                currZ = targetZ
+                    currX = targetX
+                    currY = targetY
+                    currZ = targetZ
+                }
             }
+
+            lineString = reader.readLine()
         }
 
         if (minX > maxX) { minX = 0f; maxX = 100f }
@@ -204,7 +221,7 @@ object GCodeParser {
 
         return ToolpathModel(
             fileName = fileName,
-            rawLines = lines,
+            rawLines = rawLinesPreview,
             segments = segments,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
             totalLengthMm = totalLength,
@@ -214,4 +231,17 @@ object GCodeParser {
             toolsUsed = toolsSet.toList().sorted()
         )
     }
+
+    private fun extractFloat(line: String, key: Char): Float? {
+        val idx = line.indexOf(key)
+        if (idx < 0) return null
+        var start = idx + 1
+        while (start < line.length && line[start].isWhitespace()) start++
+        if (start >= line.length) return null
+        var end = start
+        if (line[end] == '+' || line[end] == '-') end++
+        while (end < line.length && (line[end].isDigit() || line[end] == '.')) end++
+        return if (end > start) line.substring(start, end).toFloatOrNull() else null
+    }
 }
+

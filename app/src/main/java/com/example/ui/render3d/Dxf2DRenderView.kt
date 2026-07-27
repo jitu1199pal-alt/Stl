@@ -51,6 +51,10 @@ fun Dxf2DRenderView(
                 }
             }
     ) {
+        val path = remember { Path() }
+        val p1Arr = remember { FloatArray(3) }
+        val p2Arr = remember { FloatArray(3) }
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
@@ -58,6 +62,8 @@ fun Dxf2DRenderView(
             val bounds = model.bounds
             val center = bounds.center()
             val maxDim = bounds.maxDimension
+
+            val fastTransform = cameraState.getFastTransform(center, maxDim, width, height)
 
             val layerColors = listOf(
                 Color(0xFF00E5FF), Color(0xFFFFD700), Color(0xFF10B981),
@@ -76,21 +82,19 @@ fun Dxf2DRenderView(
 
                 for (i in -10..10) {
                     val x = center.x + i * gridStep
-                    val p1 = cameraState.project(Vector3D(x, bounds.minY - maxDim, 0f), center, maxDim, width, height)
-                    val p2 = cameraState.project(Vector3D(x, bounds.maxY + maxDim, 0f), center, maxDim, width, height)
-                    drawLine(gridColor, Offset(p1.x, p1.y), Offset(p2.x, p2.y), strokeWidth = 1f)
+                    cameraState.projectFast(x, bounds.minY - maxDim, 0f, fastTransform, p1Arr)
+                    cameraState.projectFast(x, bounds.maxY + maxDim, 0f, fastTransform, p2Arr)
+                    drawLine(gridColor, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 1f)
                 }
                 for (j in -10..10) {
                     val y = center.y + j * gridStep
-                    val p1 = cameraState.project(Vector3D(bounds.minX - maxDim, y, 0f), center, maxDim, width, height)
-                    val p2 = cameraState.project(Vector3D(bounds.maxX + maxDim, y, 0f), center, maxDim, width, height)
-                    drawLine(gridColor, Offset(p1.x, p1.y), Offset(p2.x, p2.y), strokeWidth = 1f)
+                    cameraState.projectFast(bounds.minX - maxDim, y, 0f, fastTransform, p1Arr)
+                    cameraState.projectFast(bounds.maxX + maxDim, y, 0f, fastTransform, p2Arr)
+                    drawLine(gridColor, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 1f)
                 }
             }
 
             // Draw DXF Entities
-            val path = Path()
-
             for (entity in model.entities) {
                 val layerName = when (entity) {
                     is DxfEntity.Line -> entity.layer
@@ -106,19 +110,19 @@ fun Dxf2DRenderView(
 
                 when (entity) {
                     is DxfEntity.Line -> {
-                        val p1 = cameraState.project(entity.start, center, maxDim, width, height)
-                        val p2 = cameraState.project(entity.end, center, maxDim, width, height)
-                        drawLine(color, Offset(p1.x, p1.y), Offset(p2.x, p2.y), strokeWidth = 2.5f)
+                        cameraState.projectFast(entity.start.x, entity.start.y, entity.start.z, fastTransform, p1Arr)
+                        cameraState.projectFast(entity.end.x, entity.end.y, entity.end.z, fastTransform, p2Arr)
+                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 2.5f)
                     }
                     is DxfEntity.Circle -> {
-                        val c = cameraState.project(entity.center, center, maxDim, width, height)
-                        val rPoint = cameraState.project(entity.center + Vector3D(entity.radius, 0f, 0f), center, maxDim, width, height)
-                        val radiusPx = kotlin.math.abs(rPoint.x - c.x)
-                        drawCircle(color, radius = radiusPx, center = Offset(c.x, c.y), style = Stroke(width = 2.5f))
+                        cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
+                        cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
+                        val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0])
+                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = 2.5f))
                     }
                     is DxfEntity.Arc -> {
                         path.reset()
-                        val steps = 20
+                        val steps = 16
                         val startRad = Math.toRadians(entity.startAngleDeg.toDouble())
                         val endRad = Math.toRadians(entity.endAngleDeg.toDouble())
                         var first = true
@@ -128,13 +132,13 @@ fun Dxf2DRenderView(
                             val ang = startRad + t * (endRad - startRad)
                             val ax = entity.center.x + entity.radius * cos(ang).toFloat()
                             val ay = entity.center.y + entity.radius * sin(ang).toFloat()
-                            val pt = cameraState.project(Vector3D(ax, ay, 0f), center, maxDim, width, height)
+                            cameraState.projectFast(ax, ay, 0f, fastTransform, p1Arr)
 
                             if (first) {
-                                path.moveTo(pt.x, pt.y)
+                                path.moveTo(p1Arr[0], p1Arr[1])
                                 first = false
                             } else {
-                                path.lineTo(pt.x, pt.y)
+                                path.lineTo(p1Arr[0], p1Arr[1])
                             }
                         }
                         drawPath(path, color, style = Stroke(width = 2.5f))
@@ -142,20 +146,20 @@ fun Dxf2DRenderView(
                     is DxfEntity.Polyline -> {
                         if (entity.points.isNotEmpty()) {
                             path.reset()
-                            val p0 = cameraState.project(entity.points[0], center, maxDim, width, height)
-                            path.moveTo(p0.x, p0.y)
+                            cameraState.projectFast(entity.points[0].x, entity.points[0].y, entity.points[0].z, fastTransform, p1Arr)
+                            path.moveTo(p1Arr[0], p1Arr[1])
 
                             for (idx in 1 until entity.points.size) {
-                                val pt = cameraState.project(entity.points[idx], center, maxDim, width, height)
-                                path.lineTo(pt.x, pt.y)
+                                cameraState.projectFast(entity.points[idx].x, entity.points[idx].y, entity.points[idx].z, fastTransform, p1Arr)
+                                path.lineTo(p1Arr[0], p1Arr[1])
                             }
                             if (entity.isClosed) path.close()
                             drawPath(path, color, style = Stroke(width = 2.5f))
                         }
                     }
                     is DxfEntity.TextEntity -> {
-                        val p = cameraState.project(entity.position, center, maxDim, width, height)
-                        drawCircle(color, radius = 4f, center = Offset(p.x, p.y))
+                        cameraState.projectFast(entity.position.x, entity.position.y, entity.position.z, fastTransform, p1Arr)
+                        drawCircle(color, radius = 4f, center = Offset(p1Arr[0], p1Arr[1]))
                     }
                 }
             }

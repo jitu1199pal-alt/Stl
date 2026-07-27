@@ -56,6 +56,14 @@ fun Toolpath3DRenderView(
                 }
             }
     ) {
+        val rapidPath = remember { Path() }
+        val completedCutPath = remember { Path() }
+        val futureCutPath = remember { Path() }
+        val activePath = remember { Path() }
+
+        val p1Arr = remember { FloatArray(3) }
+        val p2Arr = remember { FloatArray(3) }
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
@@ -63,6 +71,8 @@ fun Toolpath3DRenderView(
             val bounds = model.bounds
             val center = bounds.center()
             val maxDim = bounds.maxDimension
+
+            val fastTransform = cameraState.getFastTransform(center, maxDim, width, height)
 
             // Draw Ground Grid
             if (showGrid) {
@@ -72,32 +82,26 @@ fun Toolpath3DRenderView(
 
                 for (i in -5..5) {
                     val x = center.x + i * gridStep
-                    val start3D = Vector3D(x, bounds.minY, bounds.minZ)
-                    val end3D = Vector3D(x, bounds.maxY, bounds.minZ)
-
-                    val p1 = cameraState.project(start3D, center, maxDim, width, height)
-                    val p2 = cameraState.project(end3D, center, maxDim, width, height)
+                    cameraState.projectFast(x, bounds.minY, bounds.minZ, fastTransform, p1Arr)
+                    cameraState.projectFast(x, bounds.maxY, bounds.minZ, fastTransform, p2Arr)
 
                     drawLine(
                         color = gridColor,
-                        start = Offset(p1.x, p1.y),
-                        end = Offset(p2.x, p2.y),
+                        start = Offset(p1Arr[0], p1Arr[1]),
+                        end = Offset(p2Arr[0], p2Arr[1]),
                         strokeWidth = 1f,
                         pathEffect = dashedEffect
                     )
                 }
                 for (j in -5..5) {
                     val y = center.y + j * gridStep
-                    val start3D = Vector3D(bounds.minX, y, bounds.minZ)
-                    val end3D = Vector3D(bounds.maxX, y, bounds.minZ)
-
-                    val p1 = cameraState.project(start3D, center, maxDim, width, height)
-                    val p2 = cameraState.project(end3D, center, maxDim, width, height)
+                    cameraState.projectFast(bounds.minX, y, bounds.minZ, fastTransform, p1Arr)
+                    cameraState.projectFast(bounds.maxX, y, bounds.minZ, fastTransform, p2Arr)
 
                     drawLine(
                         color = gridColor,
-                        start = Offset(p1.x, p1.y),
-                        end = Offset(p2.x, p2.y),
+                        start = Offset(p1Arr[0], p1Arr[1]),
+                        end = Offset(p2Arr[0], p2Arr[1]),
                         strokeWidth = 1f,
                         pathEffect = dashedEffect
                     )
@@ -107,77 +111,82 @@ fun Toolpath3DRenderView(
             // Draw XYZ Origin Triad Axes
             if (showAxes) {
                 val axisLen = maxDim * 0.3f
-                val origin = cameraState.project(Vector3D(0f, 0f, 0f), center, maxDim, width, height)
-                val xAxis = cameraState.project(Vector3D(axisLen, 0f, 0f), center, maxDim, width, height)
-                val yAxis = cameraState.project(Vector3D(0f, axisLen, 0f), center, maxDim, width, height)
-                val zAxis = cameraState.project(Vector3D(0f, 0f, axisLen), center, maxDim, width, height)
+                cameraState.projectFast(0f, 0f, 0f, fastTransform, p1Arr)
+                val ox = p1Arr[0]; val oy = p1Arr[1]
 
-                // X Axis - Red
-                drawLine(Color(0xFFEF4444), Offset(origin.x, origin.y), Offset(xAxis.x, xAxis.y), strokeWidth = 4f, cap = StrokeCap.Round)
-                // Y Axis - Green
-                drawLine(Color(0xFF10B981), Offset(origin.x, origin.y), Offset(yAxis.x, yAxis.y), strokeWidth = 4f, cap = StrokeCap.Round)
-                // Z Axis - Blue
-                drawLine(Color(0xFF3B82F6), Offset(origin.x, origin.y), Offset(zAxis.x, zAxis.y), strokeWidth = 4f, cap = StrokeCap.Round)
+                cameraState.projectFast(axisLen, 0f, 0f, fastTransform, p2Arr)
+                drawLine(Color(0xFFEF4444), Offset(ox, oy), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 4f, cap = StrokeCap.Round)
+
+                cameraState.projectFast(0f, axisLen, 0f, fastTransform, p2Arr)
+                drawLine(Color(0xFF10B981), Offset(ox, oy), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 4f, cap = StrokeCap.Round)
+
+                cameraState.projectFast(0f, 0f, axisLen, fastTransform, p2Arr)
+                drawLine(Color(0xFF3B82F6), Offset(ox, oy), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 4f, cap = StrokeCap.Round)
             }
 
-            // Draw Toolpath Segments
-            val dashedRapidEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+            // Batched GPU Path Drawing for 60 FPS performance
+            rapidPath.reset()
+            completedCutPath.reset()
+            futureCutPath.reset()
+            activePath.reset()
 
-            var currentPosition = Vector3D(0f, 0f, 0f)
+            val segments = model.segments
+            val totalSegs = segments.size
+            val stride = when {
+                totalSegs > 100_000 -> 8
+                totalSegs > 40_000 -> 4
+                totalSegs > 15_000 -> 2
+                else -> 1
+            }
 
-            for ((idx, seg) in model.segments.withIndex()) {
+            var idx = 0
+            while (idx < totalSegs) {
+                val seg = segments[idx]
                 val isCompleted = idx <= currentSegmentIndex
                 val isCurrent = idx == currentSegmentIndex
 
-                val pathColor = when {
-                    isCurrent -> Color(0xFFEAB308) // Active cutting - Bright Yellow
-                    isCompleted && seg.motionType == MotionType.RAPID_G0 -> Color(0xFFF97316) // Completed Rapid - Amber
-                    isCompleted -> Color(0xFF06B6D4) // Completed Cutting - Neon Cyan
-                    seg.motionType == MotionType.RAPID_G0 -> Color(0x40F97316) // Translucent Rapid
-                    else -> Color(0x3006B6D4) // Translucent Cutting
-                }
-
-                val strokeWidth = when {
-                    isCurrent -> 6f
-                    isCompleted -> 3f
-                    else -> 1.5f
+                val targetPath = when {
+                    isCurrent -> activePath
+                    seg.motionType == MotionType.RAPID_G0 -> rapidPath
+                    isCompleted -> completedCutPath
+                    else -> futureCutPath
                 }
 
                 if (seg.arcPoints.isNotEmpty()) {
-                    val path = Path()
                     var first = true
                     for (pt in seg.arcPoints) {
-                        val projected = cameraState.project(pt, center, maxDim, width, height)
+                        cameraState.projectFast(pt.x, pt.y, pt.z, fastTransform, p1Arr)
                         if (first) {
-                            path.moveTo(projected.x, projected.y)
+                            targetPath.moveTo(p1Arr[0], p1Arr[1])
                             first = false
                         } else {
-                            path.lineTo(projected.x, projected.y)
+                            targetPath.lineTo(p1Arr[0], p1Arr[1])
                         }
                     }
-                    drawPath(
-                        path = path,
-                        color = pathColor,
-                        style = Stroke(width = strokeWidth)
-                    )
                 } else {
-                    val p1 = cameraState.project(seg.start, center, maxDim, width, height)
-                    val p2 = cameraState.project(seg.end, center, maxDim, width, height)
-
-                    drawLine(
-                        color = pathColor,
-                        start = Offset(p1.x, p1.y),
-                        end = Offset(p2.x, p2.y),
-                        strokeWidth = strokeWidth,
-                        cap = StrokeCap.Round,
-                        pathEffect = if (seg.motionType == MotionType.RAPID_G0) dashedRapidEffect else null
-                    )
+                    cameraState.projectFast(seg.start.x, seg.start.y, seg.start.z, fastTransform, p1Arr)
+                    cameraState.projectFast(seg.end.x, seg.end.y, seg.end.z, fastTransform, p2Arr)
+                    targetPath.moveTo(p1Arr[0], p1Arr[1])
+                    targetPath.lineTo(p2Arr[0], p2Arr[1])
                 }
 
-                if (isCurrent || (currentSegmentIndex in model.segments.indices && idx == currentSegmentIndex)) {
-                    currentPosition = seg.end
-                }
+                idx += if (idx > currentSegmentIndex) stride else 1
             }
+
+            // Draw Batched Paths in bulk
+            val dashedRapidEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+
+            // Rapid Paths
+            drawPath(rapidPath, color = Color(0x60F97316), style = Stroke(width = 1.5f, pathEffect = dashedRapidEffect))
+
+            // Future Cut Paths
+            drawPath(futureCutPath, color = Color(0x3006B6D4), style = Stroke(width = 1.5f))
+
+            // Completed Cut Paths
+            drawPath(completedCutPath, color = Color(0xFF06B6D4), style = Stroke(width = 3f, cap = StrokeCap.Round))
+
+            // Active Cut Path
+            drawPath(activePath, color = Color(0xFFEAB308), style = Stroke(width = 6f, cap = StrokeCap.Round))
 
             // Draw Animated 3D Cutter Bit
             if (showToolHead && model.segments.isNotEmpty()) {

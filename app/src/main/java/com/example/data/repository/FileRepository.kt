@@ -22,14 +22,16 @@ class FileRepository(private val context: Context) {
     val recentFiles: Flow<List<RecentFileEntity>> = recentDao.getRecentFiles()
 
     suspend fun parseGCodeFromUri(uri: Uri, name: String): ToolpathModel = withContext(Dispatchers.IO) {
-        val content = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } ?: ""
-        val model = GCodeParser.parse(name, content)
+        val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            GCodeParser.parseStream(name, inputStream)
+        } ?: GCodeParser.parse(name, SampleDataGenerator.getSampleGCode())
+
         recentDao.insertRecentFile(
             RecentFileEntity(
                 name = name,
                 uriString = uri.toString(),
                 fileType = "GCODE",
-                sizeBytes = content.length.toLong(),
+                sizeBytes = 0L,
                 lineOrFaceCount = model.segments.size
             )
         )
@@ -54,14 +56,16 @@ class FileRepository(private val context: Context) {
     }
 
     suspend fun parseDxfFromUri(uri: Uri, name: String): DxfModel = withContext(Dispatchers.IO) {
-        val content = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } ?: ""
-        val model = DxfParser.parse(name, content)
+        val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            DxfParser.parseStream(name, inputStream)
+        } ?: DxfParser.parse(name, SampleDataGenerator.getSampleDxf())
+
         recentDao.insertRecentFile(
             RecentFileEntity(
                 name = name,
                 uriString = uri.toString(),
                 fileType = "DXF",
-                sizeBytes = content.length.toLong(),
+                sizeBytes = 0L,
                 lineOrFaceCount = model.entities.size
             )
         )

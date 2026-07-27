@@ -2,6 +2,10 @@ package com.example.data.parser
 
 import com.example.ui.render3d.BoundingBox3D
 import com.example.ui.render3d.Vector3D
+import java.io.BufferedReader
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -23,7 +27,11 @@ data class DxfModel(
 object DxfParser {
 
     fun parse(fileName: String, content: String): DxfModel {
-        val lines = content.lines()
+        return parseStream(fileName, content.byteInputStream())
+    }
+
+    fun parseStream(fileName: String, inputStream: InputStream): DxfModel {
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
         val entities = mutableListOf<DxfEntity>()
         val layerSet = mutableSetOf<String>()
 
@@ -87,11 +95,11 @@ object DxfParser {
             polyClosed = false
         }
 
-        var i = 0
-        while (i < lines.size - 1) {
-            val code = lines[i].trim().toIntOrNull()
-            val value = lines[i + 1].trim()
-            i += 2
+        var lineCode = reader.readLine()
+        while (lineCode != null) {
+            val lineValue = reader.readLine() ?: break
+            val code = lineCode.trim().toIntOrNull()
+            val value = lineValue.trim()
 
             if (code == 0) {
                 finalizeEntity()
@@ -112,9 +120,10 @@ object DxfParser {
                 val flag = value.toIntOrNull() ?: 0
                 polyClosed = (flag and 1) != 0
             } else if (code == 10 && (currentType == "LWPOLYLINE" || currentType == "POLYLINE")) {
-                // Next vertex point in polyline
                 polyPoints.add(Vector3D(x1, y1, z1))
             }
+
+            lineCode = reader.readLine()
         }
         finalizeEntity()
 
