@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Toolpath Sim</string>
+    <string name="app_full_name">Toolpath Simulation with STL</string>
+</resources>

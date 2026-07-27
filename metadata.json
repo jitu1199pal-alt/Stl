@@ -1,0 +1,6 @@
+{
+  "name": "Toolpath Simulation with STL",
+  "description": "Ultra-smooth 3D CNC Toolpath Simulator (.tap, .nc, .txt), 3D STL Mesh Viewer, and DXF CAD Viewer with 60 FPS GPU controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
