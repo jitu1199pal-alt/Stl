@@ -161,12 +161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             while (isActive && _isPlaying.value) {
                 val segments = currentModel.segments
                 val idx = _currentSegmentIndex.value
-                if (idx < segments.size - 1) {
-                    val delayMs = (30f / _speedMultiplier.value).coerceAtLeast(1f).toLong()
-                    delay(delayMs)
-                    _currentSegmentIndex.value = idx + 1
+                val totalSegs = segments.size
+                if (idx < totalSegs - 1) {
+                    val stepSize = ((totalSegs / 500f) * _speedMultiplier.value).toInt().coerceAtLeast(1)
+                    val nextIdx = (idx + stepSize).coerceAtMost(totalSegs - 1)
+                    delay(30L)
+                    _currentSegmentIndex.value = nextIdx
                     val seg = segments[idx]
-                    _elapsedTimeSeconds.value += (seg.lengthMm / (seg.feedRate.coerceAtLeast(100f) / 60f)) / _speedMultiplier.value
+                    _elapsedTimeSeconds.value += (seg.lengthMm / (seg.feedRate.coerceAtLeast(100f) / 60f)) * stepSize / _speedMultiplier.value
                 } else {
                     _isPlaying.value = false
                     break

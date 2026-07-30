@@ -23,9 +23,11 @@ data class StlModel(
 
 object StlParser {
 
+    private const val MAX_DISPLAY_TRIANGLES = 30_000
+
     fun parse(fileName: String, inputStream: InputStream): StlModel {
-        val bufferedStream = BufferedInputStream(inputStream, 65536)
-        bufferedStream.mark(256)
+        val bufferedStream = BufferedInputStream(inputStream, 131072) // 128KB buffer for rapid I/O
+        bufferedStream.mark(512)
 
         val headerBytes = ByteArray(80)
         val readHeaderLen = bufferedStream.read(headerBytes, 0, 80)
@@ -36,7 +38,6 @@ object StlParser {
         if (readHeaderLen >= 5) {
             val headerStr = String(headerBytes, 0, readHeaderLen.coerceAtMost(80), StandardCharsets.US_ASCII).lowercase()
             if (headerStr.startsWith("solid")) {
-                // If it starts with "solid", check if count is suspiciously huge or if ASCII tokens exist
                 val testBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
                 val triCount = testBuffer.int
                 if (triCount <= 0 || triCount > 20_000_000) {
@@ -62,7 +63,9 @@ object StlParser {
         val countBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
         val numTriangles = countBuffer.int.coerceAtLeast(0)
 
-        val triangles = ArrayList<Triangle3D>(numTriangles.coerceAtMost(100000))
+        val sampleStep = (numTriangles / MAX_DISPLAY_TRIANGLES).coerceAtLeast(1)
+        val estimatedDisplayCount = (numTriangles / sampleStep) + 10
+        val triangles = ArrayList<Triangle3D>(estimatedDisplayCount.coerceAtMost(MAX_DISPLAY_TRIANGLES))
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -93,26 +96,36 @@ object StlParser {
             minY = minOf(minY, v1y, v2y, v3y); maxY = maxOf(maxY, v1y, v2y, v3y)
             minZ = minOf(minZ, v1z, v2z, v3z); maxZ = maxOf(maxZ, v1z, v2z, v3z)
 
-            val v1 = Vector3D(v1x, v1y, v1z)
-            val v2 = Vector3D(v2x, v2y, v2z)
-            val v3 = Vector3D(v3x, v3y, v3z)
+            // Calculate Area & Volume statistics accurately for ALL triangles
+            val crossX = (v2y - v1y) * (v3z - v1z) - (v2z - v1z) * (v3y - v1y)
+            val crossY = (v2z - v1z) * (v3x - v1x) - (v2x - v1x) * (v3z - v1z)
+            val crossZ = (v2x - v1x) * (v3y - v1y) - (v2y - v1y) * (v3x - v1x)
+            val crossLen = kotlin.math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
+            totalArea += crossLen * 0.5f
 
-            val normal = if (nx == 0f && ny == 0f && nz == 0f) {
-                (v2 - v1).cross(v3 - v1).normalize()
-            } else {
-                Vector3D(nx, ny, nz).normalize()
-            }
-
-            val cross = (v2 - v1).cross(v3 - v1)
-            val area = cross.length() * 0.5f
-            totalArea += area
-
-            val v = (v1.x * (v2.y * v3.z - v3.y * v2.z) +
-                    v2.x * (v3.y * v1.z - v1.y * v3.z) +
-                    v3.x * (v1.y * v2.z - v2.y * v1.z)) / 6f
+            val v = (v1x * (v2y * v3z - v3y * v2z) +
+                    v2x * (v3y * v1z - v1y * v3z) +
+                    v3x * (v1y * v2z - v2y * v1z)) / 6f
             totalVolume += v
 
-            triangles.add(Triangle3D(v1, v2, v3, normal))
+            // Decimate for display mesh to prevent memory overflow and lag
+            if (i % sampleStep == 0) {
+                val v1 = Vector3D(v1x, v1y, v1z)
+                val v2 = Vector3D(v2x, v2y, v2z)
+                val v3 = Vector3D(v3x, v3y, v3z)
+
+                val normal = if (nx == 0f && ny == 0f && nz == 0f) {
+                    if (crossLen > 0.00001f) {
+                        Vector3D(crossX / crossLen, crossY / crossLen, crossZ / crossLen)
+                    } else {
+                        Vector3D(0f, 0f, 1f)
+                    }
+                } else {
+                    Vector3D(nx, ny, nz).normalize()
+                }
+
+                triangles.add(Triangle3D(v1, v2, v3, normal))
+            }
         }
 
         if (minX > maxX) { minX = 0f; maxX = 10f; minY = 0f; maxY = 10f; minZ = 0f; maxZ = 10f }
@@ -121,14 +134,14 @@ object StlParser {
             fileName = fileName,
             triangles = triangles,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
-            faceCount = triangles.size,
+            faceCount = numTriangles,
             surfaceAreaMm2 = totalArea,
             volumeMm3 = abs(totalVolume)
         )
     }
 
     private fun parseAscii(fileName: String, inputStream: InputStream): StlModel {
-        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 131072)
         val triangles = mutableListOf<Triangle3D>()
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
@@ -137,13 +150,14 @@ object StlParser {
 
         var currentNormal = Vector3D(0f, 0f, 1f)
         val vertices = ArrayList<Vector3D>(3)
+        var totalFacetCount = 0
 
         var line = reader.readLine()
         while (line != null) {
             val trimmed = line.trim().lowercase()
             if (trimmed.startsWith("facet normal")) {
                 val parts = trimmed.split(Regex("""\s+"""))
-                if (parts.size >= 4) {
+                if (parts.size >= 5) {
                     val nx = parts[2].toFloatOrNull() ?: 0f
                     val ny = parts[3].toFloatOrNull() ?: 0f
                     val nz = parts[4].toFloatOrNull() ?: 1f
@@ -163,8 +177,12 @@ object StlParser {
                     minZ = minOf(minZ, vz); maxZ = maxOf(maxZ, vz)
                 }
             } else if (trimmed.startsWith("endfacet")) {
+                totalFacetCount++
                 if (vertices.size >= 3) {
-                    triangles.add(Triangle3D(vertices[0], vertices[1], vertices[2], currentNormal))
+                    // Cap ASCII display triangles if ASCII file is massive
+                    if (triangles.size < MAX_DISPLAY_TRIANGLES) {
+                        triangles.add(Triangle3D(vertices[0], vertices[1], vertices[2], currentNormal))
+                    }
                 }
                 vertices.clear()
             }
@@ -177,7 +195,7 @@ object StlParser {
             fileName = fileName,
             triangles = triangles,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
-            faceCount = triangles.size,
+            faceCount = totalFacetCount,
             surfaceAreaMm2 = 0f,
             volumeMm3 = 0f
         )

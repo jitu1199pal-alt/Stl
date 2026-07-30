@@ -45,18 +45,17 @@ fun Stl3DRenderView(
                 detectTransformGestures { _, pan, zoomFactor, _ ->
                     if (zoomFactor != 1f) {
                         cameraState.scaleZoom(zoomFactor)
-                    } else if (pan != Offset.Zero) {
-                        cameraState.pan(pan.x, pan.y)
                     }
-                }
-            }
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    cameraState.rotate(
-                        deltaYaw = dragAmount.x * 0.4f,
-                        deltaPitch = dragAmount.y * 0.4f
-                    )
+                    if (pan != Offset.Zero) {
+                        if (zoomFactor == 1f) {
+                            cameraState.rotate(
+                                deltaYaw = pan.x * 0.4f,
+                                deltaPitch = pan.y * 0.4f
+                            )
+                        } else {
+                            cameraState.pan(pan.x, pan.y)
+                        }
+                    }
                 }
             }
     ) {

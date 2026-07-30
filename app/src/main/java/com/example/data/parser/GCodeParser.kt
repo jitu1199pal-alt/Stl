@@ -53,7 +53,7 @@ object GCodeParser {
     }
 
     fun parseStream(fileName: String, inputStream: InputStream): ToolpathModel {
-        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 131072)
         val segments = mutableListOf<ToolpathSegment>()
         val rawLinesPreview = mutableListOf<String>()
 
@@ -88,6 +88,7 @@ object GCodeParser {
 
         var lineNo = 0
         var lineString: String? = reader.readLine()
+        var segmentCounter = 0
 
         while (lineString != null) {
             lineNo++
@@ -191,20 +192,24 @@ object GCodeParser {
                     val estSecs = (segLength / speedMmMin) * 60f
                     totalEstSeconds += estSecs
 
-                    segments.add(
-                        ToolpathSegment(
-                            lineNumber = lineNo,
-                            rawText = if (lineNo <= 1000) cleanLine else "",
-                            start = startVec,
-                            end = endVec,
-                            motionType = currMotion,
-                            feedRate = currFeed,
-                            rpm = currRpm,
-                            toolNumber = currTool,
-                            lengthMm = segLength,
-                            arcPoints = arcPts
+                    segmentCounter++
+                    // Store segments efficiently for rendering
+                    if (segments.size < 40_000 || (segmentCounter % (lineNo / 30000 + 1) == 0)) {
+                        segments.add(
+                            ToolpathSegment(
+                                lineNumber = lineNo,
+                                rawText = if (lineNo <= 1000) cleanLine else "",
+                                start = startVec,
+                                end = endVec,
+                                motionType = currMotion,
+                                feedRate = currFeed,
+                                rpm = currRpm,
+                                toolNumber = currTool,
+                                lengthMm = segLength,
+                                arcPoints = arcPts
+                            )
                         )
-                    )
+                    }
 
                     currX = targetX
                     currY = targetY
