@@ -29,8 +29,9 @@ fun Stl3DRenderView(
     model: StlModel,
     cameraState: CameraState = remember { CameraState() },
     renderMode: StlRenderMode = StlRenderMode.SOLID,
-    meshColor: Color = Color(0xFF00E5FF),
-    showBoundingBox: Boolean = true,
+    meshColor: Color = Color(0xFFD37554), // Default Copper / Terracotta relief color like reference
+    showBoundingBox: Boolean = false,
+    showTriadAxis: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -59,10 +60,13 @@ fun Stl3DRenderView(
                 }
             }
     ) {
-        val path = remember { Path() }
         val p1Arr = remember { FloatArray(3) }
         val p2Arr = remember { FloatArray(3) }
         val p3Arr = remember { FloatArray(3) }
+
+        val bucketCount = 16
+        val pathBuckets = remember { Array(bucketCount) { Path() } }
+        val wireframePath = remember { Path() }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
@@ -73,62 +77,82 @@ fun Stl3DRenderView(
             val maxDim = bounds.maxDimension
 
             val fastTransform = cameraState.getFastTransform(center, maxDim, width, height)
-            val lightDir = Vector3D(0.5f, 0.8f, 1.0f).normalize()
+
+            // Reset path buckets
+            for (b in 0 until bucketCount) {
+                pathBuckets[b].reset()
+            }
+            wireframePath.reset()
 
             val triangles = model.triangles
             val count = triangles.size
 
-            // For huge meshes (>15,000 triangles), stride rendering to guarantee 60 FPS with zero lag
-            val stride = when {
-                count > 100_000 -> 8
-                count > 50_000 -> 4
-                count > 15_000 -> 2
-                else -> 1
-            }
+            // Fast 3D Light Direction from Top-Right-Front
+            val lx = 0.35f; val ly = 0.55f; val lz = 0.75f
 
             var i = 0
             while (i < count) {
                 val tri = triangles[i]
 
+                // Project vertices
                 cameraState.projectFast(tri.v1.x, tri.v1.y, tri.v1.z, fastTransform, p1Arr)
                 cameraState.projectFast(tri.v2.x, tri.v2.y, tri.v2.z, fastTransform, p2Arr)
                 cameraState.projectFast(tri.v3.x, tri.v3.y, tri.v3.z, fastTransform, p3Arr)
 
-                path.reset()
-                path.moveTo(p1Arr[0], p1Arr[1])
-                path.lineTo(p2Arr[0], p2Arr[1])
-                path.lineTo(p3Arr[0], p3Arr[1])
-                path.close()
+                // 2D Screen Space Bounding check
+                val minPx = minOf(p1Arr[0], p2Arr[0], p3Arr[0])
+                val maxPx = maxOf(p1Arr[0], p2Arr[0], p3Arr[0])
+                val minPy = minOf(p1Arr[1], p2Arr[1], p3Arr[1])
+                val maxPy = maxOf(p1Arr[1], p2Arr[1], p3Arr[1])
 
-                when (renderMode) {
-                    StlRenderMode.SOLID -> {
-                        val intensity = max(0.2f, tri.normal.dot(lightDir))
-                        val shadedColor = meshColor.copy(
-                            red = meshColor.red * intensity,
-                            green = meshColor.green * intensity,
-                            blue = meshColor.blue * intensity,
-                            alpha = 1f
-                        )
-                        drawPath(path, color = shadedColor)
-                        if (count <= 10_000) {
-                            drawPath(path, color = meshColor.copy(alpha = 0.2f), style = Stroke(width = 0.5f))
-                        }
-                    }
-                    StlRenderMode.WIREFRAME -> {
-                        drawPath(path, color = meshColor, style = Stroke(width = 1f))
-                    }
-                    StlRenderMode.TRANSPARENT -> {
-                        drawPath(path, color = meshColor.copy(alpha = 0.35f))
-                        if (count <= 10_000) {
-                            drawPath(path, color = meshColor, style = Stroke(width = 0.8f))
-                        }
-                    }
-                    StlRenderMode.BOUNDING_BOX -> {
-                        drawPath(path, color = meshColor.copy(alpha = 0.15f))
-                    }
+                if (maxPx >= 0 && minPx <= width && maxPy >= 0 && minPy <= height) {
+                    // Transformed Normal for lighting
+                    val nx = tri.normal.x; val ny = tri.normal.y; val nz = tri.normal.z
+
+                    // Rotate normal
+                    val rnx1 = nx * fastTransform.cosYaw + nz * fastTransform.sinYaw
+                    val rny1 = ny
+                    val rnz1 = -nx * fastTransform.sinYaw + nz * fastTransform.cosYaw
+
+                    val rnx2 = rnx1
+                    val rny2 = rny1 * fastTransform.cosPitch - rnz1 * fastTransform.sinPitch
+                    val rnz2 = rny1 * fastTransform.sinPitch + rnz1 * fastTransform.cosPitch
+
+                    // Lighting Dot Product
+                    val dotVal = kotlin.math.abs(rnx2 * lx + rny2 * ly + rnz2 * lz)
+                    val intensity = (0.22f + 0.78f * dotVal).coerceIn(0.15f, 1.0f)
+
+                    val bucketIdx = ((intensity - 0.15f) / 0.85f * (bucketCount - 0.01f)).toInt().coerceIn(0, bucketCount - 1)
+
+                    val targetPath = if (renderMode == StlRenderMode.WIREFRAME) wireframePath else pathBuckets[bucketIdx]
+                    targetPath.moveTo(p1Arr[0], p1Arr[1])
+                    targetPath.lineTo(p2Arr[0], p2Arr[1])
+                    targetPath.lineTo(p3Arr[0], p3Arr[1])
+                    targetPath.close()
                 }
 
-                i += stride
+                i++
+            }
+
+            // Draw solid shaded surfaces by bucket in 16 GPU calls
+            if (renderMode != StlRenderMode.WIREFRAME) {
+                for (b in 0 until bucketCount) {
+                    val bucketRatio = b / (bucketCount - 1f)
+                    val bIntensity = 0.15f + bucketRatio * 0.85f
+                    // Specular highlight boost for metallic relief
+                    val spec = if (bucketRatio > 0.75f) (bucketRatio - 0.75f) * 0.45f else 0f
+
+                    val bColor = Color(
+                        red = (meshColor.red * bIntensity + spec).coerceIn(0f, 1f),
+                        green = (meshColor.green * bIntensity + spec).coerceIn(0f, 1f),
+                        blue = (meshColor.blue * bIntensity + spec).coerceIn(0f, 1f),
+                        alpha = if (renderMode == StlRenderMode.TRANSPARENT) 0.45f else 1f
+                    )
+
+                    drawPath(pathBuckets[b], color = bColor)
+                }
+            } else {
+                drawPath(wireframePath, color = meshColor, style = Stroke(width = 0.8f))
             }
 
             // Draw Bounding Box Cage if enabled
@@ -158,6 +182,54 @@ fun Stl3DRenderView(
                         strokeWidth = 1.5f
                     )
                 }
+            }
+
+            // Bottom-Left XYZ Axis Orientation Triad Indicator
+            if (showTriadAxis) {
+                val triadCenterX = 45f
+                val triadCenterY = height - 45f
+                val triadLen = 30f
+
+                // Transform unit axis vectors
+                val x_rx1 = fastTransform.cosYaw
+                val x_ry1 = 0f
+                val x_rz1 = -fastTransform.sinYaw
+                val x_rx2 = x_rx1
+                val x_ry2 = x_ry1 * fastTransform.cosPitch - x_rz1 * fastTransform.sinPitch
+
+                val y_rx1 = 0f
+                val y_ry1 = 1f
+                val y_rz1 = 0f
+                val y_rx2 = y_rx1
+                val y_ry2 = y_ry1 * fastTransform.cosPitch - y_rz1 * fastTransform.sinPitch
+
+                val z_rx1 = fastTransform.sinYaw
+                val z_ry1 = 0f
+                val z_rz1 = fastTransform.cosYaw
+                val z_rx2 = z_rx1
+                val z_ry2 = z_ry1 * fastTransform.cosPitch - z_rz1 * fastTransform.sinPitch
+
+                // X Axis (Red)
+                drawLine(
+                    color = Color(0xFFEF4444),
+                    start = Offset(triadCenterX, triadCenterY),
+                    end = Offset(triadCenterX + x_rx2 * triadLen, triadCenterY - x_ry2 * triadLen),
+                    strokeWidth = 3f
+                )
+                // Y Axis (Green)
+                drawLine(
+                    color = Color(0xFF10B981),
+                    start = Offset(triadCenterX, triadCenterY),
+                    end = Offset(triadCenterX + y_rx2 * triadLen, triadCenterY - y_ry2 * triadLen),
+                    strokeWidth = 3f
+                )
+                // Z Axis (Blue)
+                drawLine(
+                    color = Color(0xFF3B82F6),
+                    start = Offset(triadCenterX, triadCenterY),
+                    end = Offset(triadCenterX + z_rx2 * triadLen, triadCenterY - z_ry2 * triadLen),
+                    strokeWidth = 3f
+                )
             }
         }
     }

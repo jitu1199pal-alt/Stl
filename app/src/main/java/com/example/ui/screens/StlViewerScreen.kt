@@ -59,11 +59,16 @@ fun StlViewerScreen(
     val stlModel = (activeModel as? ActiveModel.STL)?.model
 
     val cameraState = remember { CameraState() }
-    var selectedColor by remember { mutableStateOf(Color(0xFF00E5FF)) }
+    var selectedColor by remember { mutableStateOf(Color(0xFFD37554)) } // Default copper terracotta relief color
+    var activeTab by remember { mutableStateOf("View") } // File, View, Mode, Tools
 
     val colors = listOf(
-        Color(0xFF00E5FF), Color(0xFFFFD700), Color(0xFF10B981),
-        Color(0xFFA855F7), Color(0xFFE2E8F0), Color(0xFFF43F5E)
+        Color(0xFFD37554), // Copper Clay Bronze
+        Color(0xFFDA984B), // Gold Wood
+        Color(0xFFE2E8F0), // Silver Steel
+        Color(0xFF00E5FF), // CAD Cyan
+        Color(0xFF10B981), // Emerald
+        Color(0xFF64748B)  // Dark Slate
     )
 
     Scaffold(
@@ -74,18 +79,9 @@ fun StlViewerScreen(
                         Text(
                             text = stlModel?.fileName ?: "3D STL Viewer",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             color = Color.White
                         )
-                        if (stlModel != null) {
-                            Text(
-                                text = "Faces: ${stlModel.faceCount} • Size: %.1fx%.1fx%.1f mm".format(
-                                    stlModel.bounds.sizeX, stlModel.bounds.sizeY, stlModel.bounds.sizeZ
-                                ),
-                                fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
-                            )
-                        }
                     }
                 },
                 navigationIcon = {
@@ -93,10 +89,10 @@ fun StlViewerScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F172A))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E293B))
             )
         },
-        containerColor = Color(0xFF020617)
+        containerColor = Color(0xFF0F172A)
     ) { innerPadding ->
         if (stlModel == null) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
@@ -108,12 +104,66 @@ fun StlViewerScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                // 3D Canvas
+                // CAD Menu Tab Bar (File, View, Mode, Tools)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF334155))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    CadMenuTabButton("File", activeTab == "File") { activeTab = "File" }
+                    CadMenuTabButton("View", activeTab == "View") { activeTab = "View" }
+                    CadMenuTabButton("Mode", activeTab == "Mode") { activeTab = "Mode" }
+                    CadMenuTabButton("Tools", activeTab == "Tools") { activeTab = "Tools" }
+                }
+
+                // Active Tab Toolbar Options
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E293B))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    when (activeTab) {
+                        "View" -> {
+                            CadQuickActionButton("Iso") { cameraState.setIsometricView() }
+                            CadQuickActionButton("Top (XY)") { cameraState.setTopView() }
+                            CadQuickActionButton("Front (XZ)") { cameraState.setFrontView() }
+                            CadQuickActionButton("Right (YZ)") { cameraState.setRightView() }
+                            CadQuickActionButton("Reset") { cameraState.reset() }
+                        }
+                        "Mode" -> {
+                            StlRenderModeChip("Solid", StlRenderMode.SOLID, renderMode) { viewModel.setStlRenderMode(it) }
+                            StlRenderModeChip("Wireframe", StlRenderMode.WIREFRAME, renderMode) { viewModel.setStlRenderMode(it) }
+                            StlRenderModeChip("Transparent", StlRenderMode.TRANSPARENT, renderMode) { viewModel.setStlRenderMode(it) }
+                            StlRenderModeChip("Box", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
+                        }
+                        "File" -> {
+                            CadQuickActionButton("Sample Model") { viewModel.loadSampleStl() }
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = "Size: ${stlModel.triangles.size} rendering faces",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        "Tools" -> {
+                            TelemetryBadge(label = "X", value = "%.1f".format(stlModel.bounds.sizeX), unit = "mm", accentColor = Color(0xFFEF4444))
+                            TelemetryBadge(label = "Y", value = "%.1f".format(stlModel.bounds.sizeY), unit = "mm", accentColor = Color(0xFF10B981))
+                            TelemetryBadge(label = "Z", value = "%.1f".format(stlModel.bounds.sizeZ), unit = "mm", accentColor = Color(0xFF3B82F6))
+                        }
+                    }
+                }
+
+                // 3D CAD Canvas Container (CAD Blue Studio Background)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(Color(0xFF0B132B))
+                        .background(Color(0xFF4B89C8)) // Classic CAD Blue Background
                 ) {
                     Stl3DRenderView(
                         model = stlModel,
@@ -123,82 +173,97 @@ fun StlViewerScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Overlay HUD Specs (Top Left)
-                    Column(
+                    // Color Palette Chooser overlay (top right)
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                            .background(Color(0x80000000), shape = RoundedCornerShape(20.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            TelemetryBadge(label = "WIDTH (X)", value = "%.1f".format(stlModel.bounds.sizeX), unit = "mm", accentColor = Color(0xFFEF4444))
-                            TelemetryBadge(label = "HEIGHT (Y)", value = "%.1f".format(stlModel.bounds.sizeY), unit = "mm", accentColor = Color(0xFF10B981))
-                            TelemetryBadge(label = "DEPTH (Z)", value = "%.1f".format(stlModel.bounds.sizeZ), unit = "mm", accentColor = Color(0xFF3B82F6))
+                        colors.forEach { col ->
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(col)
+                                    .border(
+                                        width = if (selectedColor == col) 2.dp else 0.dp,
+                                        color = Color.White,
+                                        shape = CircleShape
+                                    )
+                                    .clickable { selectedColor = col }
+                            )
                         }
                     }
                 }
 
-                // Mesh Settings Dock
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                    shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                // Bottom Status Bar matching CAD Software
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1E293B))
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = "RENDER MODE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StlRenderModeChip("Solid", StlRenderMode.SOLID, renderMode) { viewModel.setStlRenderMode(it) }
-                            StlRenderModeChip("Wireframe", StlRenderMode.WIREFRAME, renderMode) { viewModel.setStlRenderMode(it) }
-                            StlRenderModeChip("Transparent", StlRenderMode.TRANSPARENT, renderMode) { viewModel.setStlRenderMode(it) }
-                            StlRenderModeChip("Box Cage", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "SURFACE COLOR",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            colors.forEach { col ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(col)
-                                        .border(
-                                            width = if (selectedColor == col) 3.dp else 0.dp,
-                                            color = Color.White,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { selectedColor = col }
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = "${stlModel.fileName}   ${stlModel.faceCount} faces   %.1f x %.1f x %.1f mm".format(
+                            stlModel.bounds.sizeX, stlModel.bounds.sizeY, stlModel.bounds.sizeZ
+                        ),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+fun CadMenuTabButton(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (isSelected) Color(0xFF475569) else Color.Transparent)
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isSelected) Color.White else Color(0xFFCBD5E1)
+        )
+    }
+}
+
+@Composable
+fun CadQuickActionButton(
+    label: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF334155))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White
+        )
     }
 }
 

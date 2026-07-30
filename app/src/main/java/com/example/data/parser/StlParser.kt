@@ -23,7 +23,7 @@ data class StlModel(
 
 object StlParser {
 
-    private const val MAX_DISPLAY_TRIANGLES = 30_000
+    private const val MAX_DISPLAY_TRIANGLES = 120_000
 
     fun parse(fileName: String, inputStream: InputStream): StlModel {
         val bufferedStream = BufferedInputStream(inputStream, 131072) // 128KB buffer for rapid I/O
@@ -63,9 +63,16 @@ object StlParser {
         val countBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
         val numTriangles = countBuffer.int.coerceAtLeast(0)
 
-        val sampleStep = (numTriangles / MAX_DISPLAY_TRIANGLES).coerceAtLeast(1)
-        val estimatedDisplayCount = (numTriangles / sampleStep) + 10
-        val triangles = ArrayList<Triangle3D>(estimatedDisplayCount.coerceAtMost(MAX_DISPLAY_TRIANGLES))
+        // Block sampling to ensure contiguous connected triangles without isolated dot-gaps
+        val blockSize = 32
+        val blockPeriod = if (numTriangles > MAX_DISPLAY_TRIANGLES) {
+            ((numTriangles.toDouble() / MAX_DISPLAY_TRIANGLES) * blockSize).toInt().coerceAtLeast(blockSize)
+        } else {
+            blockSize
+        }
+
+        val estimatedDisplayCount = if (numTriangles <= MAX_DISPLAY_TRIANGLES) numTriangles else MAX_DISPLAY_TRIANGLES + 500
+        val triangles = ArrayList<Triangle3D>(estimatedDisplayCount)
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -108,23 +115,25 @@ object StlParser {
                     v3x * (v1y * v2z - v2y * v1z)) / 6f
             totalVolume += v
 
-            // Decimate for display mesh to prevent memory overflow and lag
-            if (i % sampleStep == 0) {
-                val v1 = Vector3D(v1x, v1y, v1z)
-                val v2 = Vector3D(v2x, v2y, v2z)
-                val v3 = Vector3D(v3x, v3y, v3z)
+            // Keep contiguous blocks so surface remains solid and seamless
+            if (numTriangles <= MAX_DISPLAY_TRIANGLES || (i % blockPeriod) < blockSize) {
+                if (triangles.size < MAX_DISPLAY_TRIANGLES) {
+                    val v1 = Vector3D(v1x, v1y, v1z)
+                    val v2 = Vector3D(v2x, v2y, v2z)
+                    val v3 = Vector3D(v3x, v3y, v3z)
 
-                val normal = if (nx == 0f && ny == 0f && nz == 0f) {
-                    if (crossLen > 0.00001f) {
-                        Vector3D(crossX / crossLen, crossY / crossLen, crossZ / crossLen)
+                    val normal = if (nx == 0f && ny == 0f && nz == 0f) {
+                        if (crossLen > 0.00001f) {
+                            Vector3D(crossX / crossLen, crossY / crossLen, crossZ / crossLen)
+                        } else {
+                            Vector3D(0f, 0f, 1f)
+                        }
                     } else {
-                        Vector3D(0f, 0f, 1f)
+                        Vector3D(nx, ny, nz).normalize()
                     }
-                } else {
-                    Vector3D(nx, ny, nz).normalize()
-                }
 
-                triangles.add(Triangle3D(v1, v2, v3, normal))
+                    triangles.add(Triangle3D(v1, v2, v3, normal))
+                }
             }
         }
 
