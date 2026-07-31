@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
+import com.example.data.parser.RlfModel
 import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
 import com.example.data.repository.FileRepository
@@ -23,6 +24,7 @@ sealed class ActiveModel {
     data class GCode(val model: ToolpathModel) : ActiveModel()
     data class STL(val model: StlModel) : ActiveModel()
     data class DXF(val model: DxfModel) : ActiveModel()
+    data class RLF(val model: RlfModel) : ActiveModel()
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -89,7 +91,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _activeModel.value = ActiveModel.DXF(dxf)
                         _dxfVisibleLayers.value = dxf.layers.toSet()
                     }
-                    else -> { // .tap, .nc, .txt, .gcode
+                    lower.endsWith(".rlf") -> {
+                        val rlf = repository.parseRlfFromUri(uri, fileName)
+                        _activeModel.value = ActiveModel.RLF(rlf)
+                    }
+                    else -> { // .bin, .tap, .nc, .txt, .gcode, .cnc, .din
                         val gcode = repository.parseGCodeFromUri(uri, fileName)
                         _activeModel.value = ActiveModel.GCode(gcode)
                         resetSimulation()
@@ -147,6 +153,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadSampleRlf() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val rlf = repository.loadSampleRlf()
+                _activeModel.value = ActiveModel.RLF(rlf)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun playSimulation() {
         if (_isPlaying.value) return
         val currentModel = (_activeModel.value as? ActiveModel.GCode)?.model ?: return
@@ -163,12 +183,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val idx = _currentSegmentIndex.value
                 val totalSegs = segments.size
                 if (idx < totalSegs - 1) {
-                    val stepSize = ((totalSegs / 500f) * _speedMultiplier.value).toInt().coerceAtLeast(1)
+                    val mult = _speedMultiplier.value
+                    val stepSize = ((totalSegs / 400f) * mult).toInt().coerceAtLeast(1)
                     val nextIdx = (idx + stepSize).coerceAtMost(totalSegs - 1)
-                    delay(30L)
+
+                    val delayTimeMs = if (mult < 1f) (30f / mult).toLong().coerceIn(2L, 200L) else 25L
+                    delay(delayTimeMs)
+
                     _currentSegmentIndex.value = nextIdx
                     val seg = segments[idx]
-                    _elapsedTimeSeconds.value += (seg.lengthMm / (seg.feedRate.coerceAtLeast(100f) / 60f)) * stepSize / _speedMultiplier.value
+                    _elapsedTimeSeconds.value += (seg.lengthMm / (seg.feedRate.coerceAtLeast(100f) / 60f)) * stepSize / mult
                 } else {
                     _isPlaying.value = false
                     break
@@ -196,6 +220,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSpeedMultiplier(speed: Float) {
         _speedMultiplier.value = speed
+        if (_isPlaying.value) {
+            // Live update simulation coroutine
+            pauseSimulation()
+            playSimulation()
+        }
     }
 
     fun setStlRenderMode(mode: StlRenderMode) {

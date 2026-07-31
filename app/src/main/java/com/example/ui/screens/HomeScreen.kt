@@ -67,6 +67,7 @@ fun HomeScreen(
     onNavigateToProgramViewer: () -> Unit,
     onNavigateToStlViewer: () -> Unit,
     onNavigateToDxfViewer: () -> Unit,
+    onNavigateToRlfViewer: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPrivacy: () -> Unit
@@ -85,6 +86,7 @@ fun HomeScreen(
             when {
                 fileName.endsWith(".stl", ignoreCase = true) -> onNavigateToStlViewer()
                 fileName.endsWith(".dxf", ignoreCase = true) -> onNavigateToDxfViewer()
+                fileName.endsWith(".rlf", ignoreCase = true) -> onNavigateToRlfViewer()
                 else -> onNavigateToProgramViewer()
             }
         }
@@ -178,6 +180,7 @@ fun HomeScreen(
                                         is ActiveModel.GCode -> (activeModel as ActiveModel.GCode).model.fileName
                                         is ActiveModel.STL -> (activeModel as ActiveModel.STL).model.fileName
                                         is ActiveModel.DXF -> (activeModel as ActiveModel.DXF).model.fileName
+                                        is ActiveModel.RLF -> (activeModel as ActiveModel.RLF).model.fileName
                                         else -> ""
                                     },
                                     fontSize = 15.sp,
@@ -191,6 +194,7 @@ fun HomeScreen(
                                         is ActiveModel.GCode -> onNavigateToProgramViewer()
                                         is ActiveModel.STL -> onNavigateToStlViewer()
                                         is ActiveModel.DXF -> onNavigateToDxfViewer()
+                                        is ActiveModel.RLF -> onNavigateToRlfViewer()
                                         else -> {}
                                     }
                                 },
@@ -220,7 +224,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "Program (.tap .nc .txt)",
+                        title = "Program (.tap .nc .bin)",
                         subtitle = "G-Code Toolpath 3D",
                         icon = Icons.Default.Code,
                         accentColor = Color(0xFF00E5FF),
@@ -242,18 +246,18 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "CAD Drawing (.dxf)",
-                        subtitle = "Vector Layers Viewer",
-                        icon = Icons.Default.Layers,
-                        accentColor = Color(0xFF10B981),
+                        title = "ArtCAM Relief (.rlf)",
+                        subtitle = "3D Relief Carving Surface",
+                        icon = Icons.Default.ViewInAr,
+                        accentColor = Color(0xFFDA984B),
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "Storage Explorer",
-                        subtitle = "Browse Device Folders",
-                        icon = Icons.Default.FolderOpen,
-                        accentColor = Color(0xFFA855F7),
+                        title = "CAD Drawing (.dxf)",
+                        subtitle = "Vector Layers Viewer",
+                        icon = Icons.Default.Layers,
+                        accentColor = Color(0xFF10B981),
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
@@ -330,7 +334,17 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Flange (.dxf)", fontSize = 11.sp, color = Color(0xFF10B981))
+                        Text("Flange (.dxf)", fontSize = 10.sp, color = Color(0xFF10B981))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.loadSampleRlf()
+                            onNavigateToRlfViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Relief (.rlf)", fontSize = 10.sp, color = Color(0xFFDA984B))
                     }
                 }
             }
@@ -386,6 +400,7 @@ fun HomeScreen(
                                 when (item.fileType) {
                                     "STL" -> onNavigateToStlViewer()
                                     "DXF" -> onNavigateToDxfViewer()
+                                    "RLF" -> onNavigateToRlfViewer()
                                     else -> onNavigateToProgramViewer()
                                 }
                             },
@@ -400,7 +415,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = when (item.fileType) {
-                                    "STL" -> Icons.Default.ViewInAr
+                                    "STL", "RLF" -> Icons.Default.ViewInAr
                                     "DXF" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },

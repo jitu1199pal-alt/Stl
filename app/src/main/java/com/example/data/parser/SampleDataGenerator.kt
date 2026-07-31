@@ -259,4 +259,39 @@ ENDSEC
 EOF
         """.trimIndent()
     }
+
+    fun getSampleRlfInputStream(): java.io.InputStream {
+        val gridW = 80
+        val gridH = 80
+        val header = ByteArray(64)
+        val buf = java.nio.ByteBuffer.wrap(header).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        buf.putInt(0x524C4620) // Magic 'RLF '
+        buf.putShort(gridW.toShort())
+        buf.putShort(gridH.toShort())
+        buf.putFloat(120f) // sizeX
+        buf.putFloat(120f) // sizeY
+
+        val dataBytes = ByteArray(64 + gridW * gridH * 4)
+        System.arraycopy(header, 0, dataBytes, 0, 64)
+
+        val dataBuf = java.nio.ByteBuffer.wrap(dataBytes, 64, gridW * gridH * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val cx = gridW / 2f
+        val cy = gridH / 2f
+
+        for (x in 0 until gridW) {
+            for (y in 0 until gridH) {
+                val dx = (x - cx) / cx
+                val dy = (y - cy) / cy
+                val r = kotlin.math.sqrt(dx * dx + dy * dy)
+                val zVal = if (r < 0.95f) {
+                    val petal = kotlin.math.cos(r * 3.14159f * 6f) * 3f + kotlin.math.sin(r * 3.14159f * 10f) * 2f
+                    (8f * (1f - r) + petal).coerceIn(0f, 15f)
+                } else {
+                    0f
+                }
+                dataBuf.putFloat(zVal)
+            }
+        }
+        return java.io.ByteArrayInputStream(dataBytes)
+    }
 }

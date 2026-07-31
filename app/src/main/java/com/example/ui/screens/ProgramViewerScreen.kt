@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -173,17 +174,30 @@ fun ProgramViewerScreen(
                     }
 
                     // Overlay 2: Camera Presets Bar (Top Right)
-                    Column(
+                    Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .padding(10.dp)
+                            .background(Color(0xE00F172A), shape = RoundedCornerShape(10.dp))
+                            .padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        CameraPresetChip("ISO") { cameraState.setIsometricView() }
-                        CameraPresetChip("TOP") { cameraState.setTopView() }
-                        CameraPresetChip("FRONT") { cameraState.setFrontView() }
-                        CameraPresetChip("RIGHT") { cameraState.setRightView() }
-                        CameraPresetChip("RESET") { cameraState.reset() }
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.width(220.dp)
+                        ) {
+                            item { CameraPresetChip("ISO (NE)") { cameraState.setIsometricNE() } }
+                            item { CameraPresetChip("SE") { cameraState.setIsometricSE() } }
+                            item { CameraPresetChip("SW") { cameraState.setIsometricSW() } }
+                            item { CameraPresetChip("NW") { cameraState.setIsometricNW() } }
+                            item { CameraPresetChip("TOP") { cameraState.setTopView() } }
+                            item { CameraPresetChip("BOTTOM") { cameraState.setBottomView() } }
+                            item { CameraPresetChip("FRONT") { cameraState.setFrontView() } }
+                            item { CameraPresetChip("BACK") { cameraState.setBackView() } }
+                            item { CameraPresetChip("LEFT") { cameraState.setLeftView() } }
+                            item { CameraPresetChip("RIGHT") { cameraState.setRightView() } }
+                            item { CameraPresetChip("RESET") { cameraState.reset() } }
+                        }
                     }
 
                     // Overlay 3: Live Line & Time HUD (Bottom Left)
@@ -416,23 +430,16 @@ fun CameraPresetChip(label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xE00F172A))
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .padding(bottom = 2.dp)
             .background(Color(0xFF1E293B))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(4.dp)),
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(2.dp).run {
-                // clickable
-                this
-            }
+            color = Color.White
         )
     }
 }

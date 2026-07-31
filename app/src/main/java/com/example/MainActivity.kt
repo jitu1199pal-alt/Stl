@@ -22,6 +22,7 @@ import com.example.ui.screens.HelpScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.PrivacyPolicyScreen
 import com.example.ui.screens.ProgramViewerScreen
+import com.example.ui.screens.RlfViewerScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StlViewerScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToProgramViewer = { navController.navigate("program_viewer") },
                                 onNavigateToStlViewer = { navController.navigate("stl_viewer") },
                                 onNavigateToDxfViewer = { navController.navigate("dxf_viewer") },
+                                onNavigateToRlfViewer = { navController.navigate("rlf_viewer") },
                                 onNavigateToSettings = { navController.navigate("settings") },
                                 onNavigateToHelp = { navController.navigate("help") },
                                 onNavigateToPrivacy = { navController.navigate("privacy") }
@@ -75,6 +77,12 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("dxf_viewer") {
                             DxfViewerScreen(
+                                viewModel = viewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("rlf_viewer") {
+                            RlfViewerScreen(
                                 viewModel = viewModel,
                                 onBack = { navController.popBackStack() }
                             )

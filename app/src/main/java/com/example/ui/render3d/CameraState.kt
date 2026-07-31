@@ -36,21 +36,75 @@ class CameraState {
     fun setTopView() {
         pitchDeg = 0f
         yawDeg = 0f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setBottomView() {
+        pitchDeg = 0f
+        yawDeg = 180f
+        panX = 0f
+        panY = 0f
     }
 
     fun setFrontView() {
-        pitchDeg = 90f
+        pitchDeg = 89.9f
         yawDeg = 0f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setBackView() {
+        pitchDeg = 89.9f
+        yawDeg = 180f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setLeftView() {
+        pitchDeg = 89.9f
+        yawDeg = 90f
+        panX = 0f
+        panY = 0f
     }
 
     fun setRightView() {
-        pitchDeg = 90f
+        pitchDeg = 89.9f
         yawDeg = -90f
+        panX = 0f
+        panY = 0f
     }
 
     fun setIsometricView() {
+        setIsometricNE()
+    }
+
+    fun setIsometricNE() {
         pitchDeg = 35.264f
         yawDeg = -45f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setIsometricSE() {
+        pitchDeg = 35.264f
+        yawDeg = -135f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setIsometricSW() {
+        pitchDeg = 35.264f
+        yawDeg = 135f
+        panX = 0f
+        panY = 0f
+    }
+
+    fun setIsometricNW() {
+        pitchDeg = 35.264f
+        yawDeg = 45f
+        panX = 0f
+        panY = 0f
     }
 
     /**
