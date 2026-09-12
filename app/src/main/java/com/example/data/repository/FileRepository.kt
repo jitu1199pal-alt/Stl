@@ -106,6 +106,16 @@ class FileRepository(private val context: Context) {
         DxfParser.parse("sample_flange.dxf", sampleText)
     }
 
+    suspend fun loadArchitecturalDxf(): DxfModel = withContext(Dispatchers.IO) {
+        val sampleText = SampleDataGenerator.getSampleArchitecturalDxf()
+        DxfParser.parse("architectural_floor_plan.dxf", sampleText)
+    }
+
+    suspend fun loadCncBracketDxf(): DxfModel = withContext(Dispatchers.IO) {
+        val sampleText = SampleDataGenerator.getSampleCncBracketDxf()
+        DxfParser.parse("cnc_bracket_plate.dxf", sampleText)
+    }
+
     suspend fun loadSampleRlf(): RlfModel = withContext(Dispatchers.IO) {
         val stream = SampleDataGenerator.getSampleRlfInputStream()
         RlfParser.parse("artcam_3d_ornament.rlf", stream)

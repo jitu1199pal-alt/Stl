@@ -102,6 +102,7 @@ fun Dxf2DRenderView(
                     is DxfEntity.Arc -> entity.layer
                     is DxfEntity.Polyline -> entity.layer
                     is DxfEntity.TextEntity -> entity.layer
+                    is DxfEntity.Ellipse -> entity.layer
                 }
 
                 if (visibleLayers.isNotEmpty() && !visibleLayers.contains(layerName)) continue
@@ -118,6 +119,13 @@ fun Dxf2DRenderView(
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
                         val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0])
+                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = 2.5f))
+                    }
+                    is DxfEntity.Ellipse -> {
+                        val r = entity.majorAxis.length()
+                        cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
+                        cameraState.projectFast(entity.center.x + r, entity.center.y, entity.center.z, fastTransform, p2Arr)
+                        val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0]).coerceAtLeast(3f)
                         drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = 2.5f))
                     }
                     is DxfEntity.Arc -> {

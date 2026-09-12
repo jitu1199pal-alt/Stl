@@ -17,6 +17,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.ui.screens.CadFolderScreen
 import com.example.ui.screens.DxfViewerScreen
 import com.example.ui.screens.HelpScreen
 import com.example.ui.screens.HomeScreen
@@ -57,10 +58,18 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToProgramViewer = { navController.navigate("program_viewer") },
                                 onNavigateToStlViewer = { navController.navigate("stl_viewer") },
                                 onNavigateToDxfViewer = { navController.navigate("dxf_viewer") },
+                                onNavigateToCadFolder = { navController.navigate("cad_folder") },
                                 onNavigateToRlfViewer = { navController.navigate("rlf_viewer") },
                                 onNavigateToSettings = { navController.navigate("settings") },
                                 onNavigateToHelp = { navController.navigate("help") },
                                 onNavigateToPrivacy = { navController.navigate("privacy") }
+                            )
+                        }
+                        composable("cad_folder") {
+                            CadFolderScreen(
+                                viewModel = viewModel,
+                                onBack = { navController.popBackStack() },
+                                onNavigateToDxfViewer = { navController.navigate("dxf_viewer") }
                             )
                         }
                         composable("program_viewer") {

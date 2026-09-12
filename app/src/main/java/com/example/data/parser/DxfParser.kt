@@ -15,13 +15,15 @@ sealed class DxfEntity {
     data class Arc(val layer: String, val center: Vector3D, val radius: Float, val startAngleDeg: Float, val endAngleDeg: Float) : DxfEntity()
     data class Polyline(val layer: String, val points: List<Vector3D>, val isClosed: Boolean) : DxfEntity()
     data class TextEntity(val layer: String, val position: Vector3D, val text: String, val height: Float) : DxfEntity()
+    data class Ellipse(val layer: String, val center: Vector3D, val majorAxis: Vector3D, val axisRatio: Float) : DxfEntity()
 }
 
 data class DxfModel(
     val fileName: String,
     val entities: List<DxfEntity>,
     val layers: List<String>,
-    val bounds: BoundingBox3D
+    val bounds: BoundingBox3D,
+    val totalEntityCount: Int = entities.size
 )
 
 object DxfParser {
@@ -31,9 +33,9 @@ object DxfParser {
     }
 
     fun parseStream(fileName: String, inputStream: InputStream): DxfModel {
-        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8))
-        val entities = mutableListOf<DxfEntity>()
-        val layerSet = mutableSetOf<String>()
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 262144)
+        val entities = ArrayList<DxfEntity>(2048)
+        val layerSet = LinkedHashSet<String>()
 
         var currentType = ""
         var currentLayer = "0"
@@ -43,8 +45,12 @@ object DxfParser {
         var radius = 0f
         var startAngle = 0f; var endAngle = 0f
         var textValue = ""
-        var polyPoints = mutableListOf<Vector3D>()
+        val polyPoints = ArrayList<Vector3D>(128)
         var polyClosed = false
+        var currentPolyX = 0f
+        var currentPolyY = 0f
+        var currentPolyZ = 0f
+        var hasPolyX = false
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -57,7 +63,8 @@ object DxfParser {
         }
 
         fun finalizeEntity() {
-            layerSet.add(currentLayer)
+            if (currentLayer.isNotEmpty()) layerSet.add(currentLayer)
+
             when (currentType) {
                 "LINE" -> {
                     updateBounds(x1, y1, z1)
@@ -65,40 +72,56 @@ object DxfParser {
                     entities.add(DxfEntity.Line(currentLayer, Vector3D(x1, y1, z1), Vector3D(x2, y2, z2)))
                 }
                 "CIRCLE" -> {
-                    updateBounds(x1 - radius, y1 - radius, z1)
-                    updateBounds(x1 + radius, y1 + radius, z1)
-                    entities.add(DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius))
+                    if (radius > 0f) {
+                        updateBounds(x1 - radius, y1 - radius, z1)
+                        updateBounds(x1 + radius, y1 + radius, z1)
+                        entities.add(DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius))
+                    }
                 }
                 "ARC" -> {
-                    updateBounds(x1 - radius, y1 - radius, z1)
-                    updateBounds(x1 + radius, y1 + radius, z1)
-                    entities.add(DxfEntity.Arc(currentLayer, Vector3D(x1, y1, z1), radius, startAngle, endAngle))
+                    if (radius > 0f) {
+                        updateBounds(x1 - radius, y1 - radius, z1)
+                        updateBounds(x1 + radius, y1 + radius, z1)
+                        entities.add(DxfEntity.Arc(currentLayer, Vector3D(x1, y1, z1), radius, startAngle, endAngle))
+                    }
                 }
                 "LWPOLYLINE", "POLYLINE" -> {
+                    if (hasPolyX) {
+                        polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                        hasPolyX = false
+                    }
                     if (polyPoints.isNotEmpty()) {
                         for (pt in polyPoints) updateBounds(pt.x, pt.y, pt.z)
-                        entities.add(DxfEntity.Polyline(currentLayer, polyPoints.toList(), polyClosed))
+                        entities.add(DxfEntity.Polyline(currentLayer, ArrayList(polyPoints), polyClosed))
                     }
                 }
                 "TEXT", "MTEXT" -> {
                     if (textValue.isNotEmpty()) {
                         updateBounds(x1, y1, z1)
-                        entities.add(DxfEntity.TextEntity(currentLayer, Vector3D(x1, y1, z1), textValue, radius.coerceAtLeast(1f)))
+                        entities.add(DxfEntity.TextEntity(currentLayer, Vector3D(x1, y1, z1), textValue, radius.coerceAtLeast(2f)))
                     }
                 }
+                "ELLIPSE" -> {
+                    updateBounds(x1 - radius, y1 - radius, z1)
+                    updateBounds(x1 + radius, y1 + radius, z1)
+                    entities.add(DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius.coerceAtLeast(1f)))
+                }
             }
+
             // reset
             x1 = 0f; y1 = 0f; z1 = 0f; x2 = 0f; y2 = 0f; z2 = 0f
             radius = 0f; startAngle = 0f; endAngle = 0f
             textValue = ""
-            polyPoints = mutableListOf()
+            polyPoints.clear()
             polyClosed = false
+            hasPolyX = false
+            currentPolyX = 0f; currentPolyY = 0f; currentPolyZ = 0f
         }
 
         var lineCode = reader.readLine()
         while (lineCode != null) {
             val lineValue = reader.readLine() ?: break
-            val code = lineCode.trim().toIntOrNull()
+            val code = lineCode.trim().toIntOrNull() ?: -999
             val value = lineValue.trim()
 
             if (code == 0) {
@@ -106,21 +129,41 @@ object DxfParser {
                 currentType = value.uppercase()
             } else if (code == 8) {
                 currentLayer = value
-            } else if (code == 10) x1 = value.toFloatOrNull() ?: x1
-            else if (code == 20) y1 = value.toFloatOrNull() ?: y1
-            else if (code == 30) z1 = value.toFloatOrNull() ?: z1
-            else if (code == 11) x2 = value.toFloatOrNull() ?: x2
-            else if (code == 21) y2 = value.toFloatOrNull() ?: y2
-            else if (code == 31) z2 = value.toFloatOrNull() ?: z2
-            else if (code == 40) radius = value.toFloatOrNull() ?: radius
-            else if (code == 50) startAngle = value.toFloatOrNull() ?: startAngle
-            else if (code == 51) endAngle = value.toFloatOrNull() ?: endAngle
-            else if (code == 1) textValue = value
-            else if (code == 70 && (currentType == "LWPOLYLINE" || currentType == "POLYLINE")) {
-                val flag = value.toIntOrNull() ?: 0
-                polyClosed = (flag and 1) != 0
-            } else if (code == 10 && (currentType == "LWPOLYLINE" || currentType == "POLYLINE")) {
-                polyPoints.add(Vector3D(x1, y1, z1))
+            } else if (currentType == "LWPOLYLINE" || currentType == "POLYLINE") {
+                // Specialized Polyline vertex stream parsing
+                when (code) {
+                    10 -> {
+                        if (hasPolyX) {
+                            polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                        }
+                        currentPolyX = value.toFloatOrNull() ?: 0f
+                        hasPolyX = true
+                    }
+                    20 -> {
+                        currentPolyY = value.toFloatOrNull() ?: 0f
+                    }
+                    30 -> {
+                        currentPolyZ = value.toFloatOrNull() ?: 0f
+                    }
+                    70 -> {
+                        val flag = value.toIntOrNull() ?: 0
+                        polyClosed = (flag and 1) != 0
+                    }
+                }
+            } else {
+                // Standard CAD entity attributes
+                when (code) {
+                    10 -> x1 = value.toFloatOrNull() ?: x1
+                    20 -> y1 = value.toFloatOrNull() ?: y1
+                    30 -> z1 = value.toFloatOrNull() ?: z1
+                    11 -> x2 = value.toFloatOrNull() ?: x2
+                    21 -> y2 = value.toFloatOrNull() ?: y2
+                    31 -> z2 = value.toFloatOrNull() ?: z2
+                    40 -> radius = value.toFloatOrNull() ?: radius
+                    50 -> startAngle = value.toFloatOrNull() ?: startAngle
+                    51 -> endAngle = value.toFloatOrNull() ?: endAngle
+                    1 -> textValue = value
+                }
             }
 
             lineCode = reader.readLine()
@@ -132,7 +175,7 @@ object DxfParser {
         return DxfModel(
             fileName = fileName,
             entities = entities,
-            layers = layerSet.ifEmpty { setOf("0") }.toList().sorted(),
+            layers = if (layerSet.isEmpty()) listOf("0") else layerSet.toList().sorted(),
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ)
         )
     }

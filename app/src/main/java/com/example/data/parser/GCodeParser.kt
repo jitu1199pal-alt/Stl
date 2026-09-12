@@ -43,26 +43,28 @@ data class ToolpathModel(
     val estimatedTimeSeconds: Float,
     val maxFeedRate: Float,
     val maxRpm: Float,
-    val toolsUsed: List<Int>
+    val toolsUsed: List<Int>,
+    val totalGCodeLines: Int = rawLines.size
 )
 
 object GCodeParser {
+
+    private const val MAX_RENDER_SEGMENTS = 35_000
 
     fun parse(fileName: String, content: String): ToolpathModel {
         return parseStream(fileName, content.byteInputStream())
     }
 
     fun parseStream(fileName: String, inputStream: InputStream): ToolpathModel {
-        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 131072)
-        val segments = mutableListOf<ToolpathSegment>()
-        val rawLinesPreview = mutableListOf<String>()
+        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 262144)
+        val rawLinesPreview = ArrayList<String>(1024)
 
         var currX = 0f
         var currY = 0f
         var currZ = 0f
 
-        var currFeed = 1000f // default mm/min
-        var currRpm = 12000f // default RPM
+        var currFeed = 1200f // mm/min
+        var currRpm = 18000f // RPM
         var currTool = 1
         var currMotion = MotionType.RAPID_G0
         var isAbsolute = true
@@ -77,7 +79,6 @@ object GCodeParser {
             if (y < minY) minY = y; if (y > maxY) maxY = y
             if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
         }
-
         updateBounds(0f, 0f, 0f)
 
         var totalLength = 0f
@@ -86,13 +87,15 @@ object GCodeParser {
         var maxS = currRpm
         val toolsSet = mutableSetOf<Int>()
 
+        // Fast temporary buffer to collect segments
+        val collectedSegments = ArrayList<ToolpathSegment>(4096)
+
         var lineNo = 0
-        var lineString: String? = reader.readLine()
-        var segmentCounter = 0
+        var lineString = reader.readLine()
 
         while (lineString != null) {
             lineNo++
-            if (lineNo <= 1000) {
+            if (lineNo <= 1200) {
                 rawLinesPreview.add(lineString)
             }
 
@@ -123,7 +126,7 @@ object GCodeParser {
                     toolsSet.add(currTool)
                 }
 
-                // Motion types
+                // Fast Motion Detection
                 if (cleanLine.contains("G00") || cleanLine.contains("G0 ") || cleanLine.endsWith("G0") || cleanLine.contains("G0X") || cleanLine.contains("G0Y") || cleanLine.contains("G0Z")) {
                     currMotion = MotionType.RAPID_G0
                 } else if (cleanLine.contains("G01") || cleanLine.contains("G1 ") || cleanLine.endsWith("G1") || cleanLine.contains("G1X") || cleanLine.contains("G1Y") || cleanLine.contains("G1Z")) {
@@ -137,7 +140,6 @@ object GCodeParser {
                 val xVal = extractFloat(cleanLine, 'X')
                 val yVal = extractFloat(cleanLine, 'Y')
                 val zVal = extractFloat(cleanLine, 'Z')
-
                 val iVal = extractFloat(cleanLine, 'I') ?: 0f
                 val jVal = extractFloat(cleanLine, 'J') ?: 0f
 
@@ -154,7 +156,6 @@ object GCodeParser {
 
                     val startVec = Vector3D(currX, currY, currZ)
                     val endVec = Vector3D(targetX, targetY, targetZ)
-
                     var segLength = (endVec - startVec).length()
                     var arcPts = emptyList<Vector3D>()
 
@@ -192,24 +193,20 @@ object GCodeParser {
                     val estSecs = (segLength / speedMmMin) * 60f
                     totalEstSeconds += estSecs
 
-                    segmentCounter++
-                    // Store segments efficiently for rendering
-                    if (segments.size < 40_000 || (segmentCounter % (lineNo / 30000 + 1) == 0)) {
-                        segments.add(
-                            ToolpathSegment(
-                                lineNumber = lineNo,
-                                rawText = if (lineNo <= 1000) cleanLine else "",
-                                start = startVec,
-                                end = endVec,
-                                motionType = currMotion,
-                                feedRate = currFeed,
-                                rpm = currRpm,
-                                toolNumber = currTool,
-                                lengthMm = segLength,
-                                arcPoints = arcPts
-                            )
+                    collectedSegments.add(
+                        ToolpathSegment(
+                            lineNumber = lineNo,
+                            rawText = if (lineNo <= 1200) cleanLine else "",
+                            start = startVec,
+                            end = endVec,
+                            motionType = currMotion,
+                            feedRate = currFeed,
+                            rpm = currRpm,
+                            toolNumber = currTool,
+                            lengthMm = segLength,
+                            arcPoints = arcPts
                         )
-                    }
+                    )
 
                     currX = targetX
                     currY = targetY
@@ -220,6 +217,21 @@ object GCodeParser {
             lineString = reader.readLine()
         }
 
+        // Decimate uniformly if collected segments exceed memory rendering threshold
+        val finalSegments: List<ToolpathSegment> = if (collectedSegments.size <= MAX_RENDER_SEGMENTS) {
+            collectedSegments
+        } else {
+            val step = kotlin.math.ceil(collectedSegments.size.toDouble() / MAX_RENDER_SEGMENTS).toInt().coerceAtLeast(2)
+            val decimated = ArrayList<ToolpathSegment>(MAX_RENDER_SEGMENTS + 10)
+            for (idx in 0 until collectedSegments.size step step) {
+                decimated.add(collectedSegments[idx])
+            }
+            if (decimated.lastOrNull() != collectedSegments.last()) {
+                decimated.add(collectedSegments.last())
+            }
+            decimated
+        }
+
         if (minX > maxX) { minX = 0f; maxX = 100f }
         if (minY > maxY) { minY = 0f; maxY = 100f }
         if (minZ > maxZ) { minZ = -10f; maxZ = 10f }
@@ -227,13 +239,14 @@ object GCodeParser {
         return ToolpathModel(
             fileName = fileName,
             rawLines = rawLinesPreview,
-            segments = segments,
+            segments = finalSegments,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
             totalLengthMm = totalLength,
             estimatedTimeSeconds = totalEstSeconds,
             maxFeedRate = maxF,
             maxRpm = maxS,
-            toolsUsed = toolsSet.toList().sorted()
+            toolsUsed = toolsSet.toList().sorted(),
+            totalGCodeLines = lineNo
         )
     }
 
@@ -249,4 +262,3 @@ object GCodeParser {
         return if (end > start) line.substring(start, end).toFloatOrNull() else null
     }
 }
-

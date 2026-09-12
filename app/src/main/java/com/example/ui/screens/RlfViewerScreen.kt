@@ -17,6 +17,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Height
+import androidx.compose.material.icons.filled.InvertColors
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,12 +62,13 @@ fun RlfViewerScreen(
     var activeTab by remember { mutableStateOf("View") }
 
     val colors = listOf(
-        Color(0xFFDA984B), // Wood Gold
+        Color(0xFFDA984B), // Wood Gold / Teak
+        Color(0xFF8D6E63), // Dark Walnut Wood
         Color(0xFFD37554), // Copper Clay
-        Color(0xFFE2E8F0), // Silver Steel
+        Color(0xFFE2E8F0), // CNC Aluminum Steel
+        Color(0xFFFFD700), // Polished Brass
         Color(0xFF00E5FF), // Cyan CAD
-        Color(0xFF10B981), // Emerald
-        Color(0xFF64748B)  // Dark Slate
+        Color(0xFF10B981)  // Jade
     )
 
     Scaffold(
@@ -79,9 +83,9 @@ fun RlfViewerScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "3D ArtCAM Relief Carving Surface",
+                            text = "3D Solid CNC Box & Carving Relief Surface",
                             fontSize = 11.sp,
-                            color = Color(0xFF94A3B8)
+                            color = Color(0xFFDA984B)
                         )
                     }
                 },
@@ -97,7 +101,7 @@ fun RlfViewerScreen(
     ) { innerPadding ->
         if (rlfModel == null) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text("No ArtCAM .rlf file loaded", color = Color.White)
+                Text("No ArtCAM .rlf relief file loaded", color = Color.White)
             }
         } else {
             Column(
@@ -113,9 +117,9 @@ fun RlfViewerScreen(
                         .padding(horizontal = 4.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    RlfMenuTabButton("File", activeTab == "File") { activeTab = "File" }
                     RlfMenuTabButton("View", activeTab == "View") { activeTab = "View" }
-                    RlfMenuTabButton("Mode", activeTab == "Mode") { activeTab = "Mode" }
+                    RlfMenuTabButton("Style", activeTab == "Style") { activeTab = "Style" }
+                    RlfMenuTabButton("Relief Box", activeTab == "Relief Box") { activeTab = "Relief Box" }
                     RlfMenuTabButton("Specs", activeTab == "Specs") { activeTab = "Specs" }
                 }
 
@@ -130,31 +134,33 @@ fun RlfViewerScreen(
                 ) {
                     when (activeTab) {
                         "View" -> {
-                            RlfQuickActionButton("Iso") { cameraState.setIsometricNE() }
+                            RlfQuickActionButton("Iso NE") { cameraState.setIsometricNE() }
+                            RlfQuickActionButton("Iso SE") { cameraState.setIsometricSE() }
                             RlfQuickActionButton("Top (XY)") { cameraState.setTopView() }
-                            RlfQuickActionButton("Front") { cameraState.setFrontView() }
-                            RlfQuickActionButton("SE") { cameraState.setIsometricSE() }
+                            RlfQuickActionButton("Front (XZ)") { cameraState.setFrontView() }
+                            RlfQuickActionButton("Right (YZ)") { cameraState.setRightView() }
                             RlfQuickActionButton("Reset") { cameraState.reset() }
                         }
-                        "Mode" -> {
-                            StlRenderModeChip("Solid", StlRenderMode.SOLID, renderMode) { viewModel.setStlRenderMode(it) }
+                        "Style" -> {
+                            StlRenderModeChip("Solid Shaded", StlRenderMode.SOLID, renderMode) { viewModel.setStlRenderMode(it) }
                             StlRenderModeChip("Wireframe", StlRenderMode.WIREFRAME, renderMode) { viewModel.setStlRenderMode(it) }
-                            StlRenderModeChip("Transparent", StlRenderMode.TRANSPARENT, renderMode) { viewModel.setStlRenderMode(it) }
-                            StlRenderModeChip("Box", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
+                            StlRenderModeChip("Ghost", StlRenderMode.TRANSPARENT, renderMode) { viewModel.setStlRenderMode(it) }
+                            StlRenderModeChip("Box Bounds", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
                         }
-                        "File" -> {
-                            RlfQuickActionButton("Sample Relief") { viewModel.loadSampleRlf() }
+                        "Relief Box" -> {
+                            RlfQuickActionButton("Box Sample") { viewModel.loadSampleRlf() }
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
-                                text = "Grid: ${rlfModel.gridWidth}x${rlfModel.gridHeight}",
+                                text = "Solid Workpiece Skirt Enabled",
                                 fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
+                                color = Color(0xFF10B981),
+                                fontWeight = FontWeight.Bold
                             )
                         }
                         "Specs" -> {
-                            TelemetryBadge(label = "W", value = "%.1f".format(rlfModel.widthMm), unit = "mm", accentColor = Color(0xFFEF4444))
-                            TelemetryBadge(label = "H", value = "%.1f".format(rlfModel.heightMm), unit = "mm", accentColor = Color(0xFF10B981))
-                            TelemetryBadge(label = "MAX Z", value = "%.1f".format(rlfModel.maxReliefHeightMm), unit = "mm", accentColor = Color(0xFF3B82F6))
+                            TelemetryBadge(label = "Length X", value = "%.1f".format(rlfModel.widthMm), unit = "mm", accentColor = Color(0xFFEF4444))
+                            TelemetryBadge(label = "Width Y", value = "%.1f".format(rlfModel.heightMm), unit = "mm", accentColor = Color(0xFF10B981))
+                            TelemetryBadge(label = "Height Z", value = "%.1f".format(rlfModel.maxReliefHeightMm), unit = "mm", accentColor = Color(0xFF3B82F6))
                         }
                     }
                 }
@@ -164,7 +170,7 @@ fun RlfViewerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(Color(0xFF1B2A4A)) // CAD Deep Studio Navy
+                        .background(Color(0xFF131D31))
                 ) {
                     Stl3DRenderView(
                         model = rlfModel.stlModel,
@@ -174,12 +180,12 @@ fun RlfViewerScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Color Palette Chooser
+                    // Color Palette Chooser (Floating Top Right)
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(10.dp)
-                            .background(Color(0x80000000), shape = RoundedCornerShape(20.dp))
+                            .background(Color(0xB3000000), shape = RoundedCornerShape(20.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -193,28 +199,82 @@ fun RlfViewerScreen(
                             )
                         }
                     }
+
+                    // Floating 3D Navigation Controls (Floating Bottom Left)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(10.dp)
+                            .background(Color(0xB3000000), shape = RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FloatingViewPill("TOP") { cameraState.setTopView() }
+                        FloatingViewPill("FRONT") { cameraState.setFrontView() }
+                        FloatingViewPill("ISO") { cameraState.setIsometricNE() }
+                        FloatingViewPill("FIT") { cameraState.reset() }
+                    }
                 }
 
-                // Bottom Status Bar
+                // Bottom Status Bar with Exact Dimensions
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color(0xFF1E293B))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "ArtCAM Relief: ${rlfModel.fileName}   Size: %.1f x %.1f x %.1f mm".format(
-                            rlfModel.widthMm, rlfModel.heightMm, rlfModel.maxReliefHeightMm
-                        ),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White
-                    )
+                    Column {
+                        Text(
+                            text = rlfModel.fileName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Solid 3D Workpiece • ${rlfModel.gridWidth}x${rlfModel.gridHeight} Height Grid • ${rlfModel.stlModel.faceCount} Polygons",
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF334155), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "%.1f x %.1f x %.1f mm".format(rlfModel.widthMm, rlfModel.heightMm, rlfModel.maxReliefHeightMm),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FloatingViewPill(
+    label: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFF334155))
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
     }
 }
 
@@ -229,7 +289,7 @@ fun RlfMenuTabButton(
             .clip(RoundedCornerShape(4.dp))
             .background(if (isSelected) Color(0xFF475569) else Color.Transparent)
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(

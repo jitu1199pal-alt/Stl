@@ -153,6 +153,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadArchitecturalDxf() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val dxf = repository.loadArchitecturalDxf()
+                _activeModel.value = ActiveModel.DXF(dxf)
+                _dxfVisibleLayers.value = dxf.layers.toSet()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun loadCncBracketDxf() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val dxf = repository.loadCncBracketDxf()
+                _activeModel.value = ActiveModel.DXF(dxf)
+                _dxfVisibleLayers.value = dxf.layers.toSet()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun loadSampleRlf() {
         viewModelScope.launch {
             _isLoading.value = true

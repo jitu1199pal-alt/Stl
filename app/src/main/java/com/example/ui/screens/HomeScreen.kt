@@ -67,6 +67,7 @@ fun HomeScreen(
     onNavigateToProgramViewer: () -> Unit,
     onNavigateToStlViewer: () -> Unit,
     onNavigateToDxfViewer: () -> Unit,
+    onNavigateToCadFolder: () -> Unit,
     onNavigateToRlfViewer: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
@@ -261,6 +262,73 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                // Dedicated AutoCAD Drawings Folder Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToCadFolder() },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF059669)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "AutoCAD Drawings Folder",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "NEW FOLDER",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "ऑटोकेड ड्राइंग्स फ़ोल्डर • View & open CAD blueprints (.dxf, .dwg)",
+                                fontSize = 11.sp,
+                                color = Color(0xFFA7F3D0)
+                            )
+                        }
+                        Button(
+                            onClick = onNavigateToCadFolder,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text("Open", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 // Storage Tip Box
