@@ -17,12 +17,37 @@ class CameraState {
     }
 
     fun scaleZoom(factor: Float) {
-        zoom = (zoom * factor).coerceIn(0.1f, 20f)
+        zoom = (zoom * factor).coerceIn(0.02f, 80f)
+    }
+
+    fun zoomIn() {
+        scaleZoom(1.30f)
+    }
+
+    fun zoomOut() {
+        scaleZoom(1f / 1.30f)
+    }
+
+    fun setZoomLevel(newZoom: Float) {
+        zoom = newZoom.coerceIn(0.02f, 80f)
     }
 
     fun pan(dx: Float, dy: Float) {
         panX += dx
         panY += dy
+    }
+
+    fun resetPan() {
+        panX = 0f
+        panY = 0f
+    }
+
+    fun fitToScreen() {
+        zoom = 1f
+        panX = 0f
+        panY = 0f
+        pitchDeg = 0f
+        yawDeg = 0f
     }
 
     fun reset() {
@@ -127,11 +152,22 @@ class CameraState {
         center: Vector3D,
         maxDim: Float,
         screenWidth: Float,
-        screenHeight: Float
+        screenHeight: Float,
+        boundsSizeX: Float = maxDim,
+        boundsSizeY: Float = maxDim
     ): FastTransform {
         val radYaw = Math.toRadians(yawDeg.toDouble()).toFloat()
         val radPitch = Math.toRadians(pitchDeg.toDouble()).toFloat()
-        val baseScale = (minOf(screenWidth, screenHeight) * 0.45f) / maxDim
+
+        val baseScale = if (kotlin.math.abs(pitchDeg) < 1f && kotlin.math.abs(yawDeg) < 1f) {
+            // 2D CAD Top View: Fit comfortably to available screen area (90% width, 88% height)
+            val fitX = (screenWidth * 0.90f) / boundsSizeX.coerceAtLeast(0.1f)
+            val fitY = (screenHeight * 0.88f) / boundsSizeY.coerceAtLeast(0.1f)
+            minOf(fitX, fitY).coerceAtLeast(0.0001f)
+        } else {
+            // 3D Isometric View: Fit 80% of screen minimum dimension
+            (minOf(screenWidth, screenHeight) * 0.80f) / maxDim.coerceAtLeast(0.1f)
+        }
         val finalScale = baseScale * zoom
 
         return FastTransform(

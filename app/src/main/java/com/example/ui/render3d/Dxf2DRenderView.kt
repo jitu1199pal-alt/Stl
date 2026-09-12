@@ -1,9 +1,13 @@
 package com.example.ui.render3d
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -13,6 +17,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.data.parser.DxfEntity
 import com.example.data.parser.DxfModel
@@ -27,27 +33,51 @@ fun Dxf2DRenderView(
     showGrid: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val textPaint = remember {
+        Paint().apply {
+            isAntiAlias = true
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onDoubleTap = { cameraState.reset(); cameraState.setTopView() }
+                    onDoubleTap = { cameraState.fitToScreen() }
                 )
             }
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoomFactor, _ ->
-                    if (zoomFactor != 1f) {
-                        cameraState.scaleZoom(zoomFactor)
-                    } else if (pan != Offset.Zero) {
-                        cameraState.pan(pan.x, pan.y)
-                    }
-                }
-            }
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    cameraState.pan(dragAmount.x, dragAmount.y)
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val canceled = event.changes.any { it.isConsumed }
+                        if (!canceled) {
+                            val pointerCount = event.changes.size
+                            if (pointerCount == 1) {
+                                val change = event.changes.first()
+                                if (change.pressed) {
+                                    val drag = change.position - change.previousPosition
+                                    if (drag != Offset.Zero) {
+                                        cameraState.pan(drag.x, drag.y)
+                                        change.consume()
+                                    }
+                                }
+                            } else if (pointerCount >= 2) {
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                if (zoomChange != 1f) {
+                                    cameraState.scaleZoom(zoomChange)
+                                }
+                                if (panChange != Offset.Zero) {
+                                    cameraState.pan(panChange.x, panChange.y)
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
     ) {
@@ -63,7 +93,14 @@ fun Dxf2DRenderView(
             val center = bounds.center()
             val maxDim = bounds.maxDimension
 
-            val fastTransform = cameraState.getFastTransform(center, maxDim, width, height)
+            val fastTransform = cameraState.getFastTransform(
+                center = center,
+                maxDim = maxDim,
+                screenWidth = width,
+                screenHeight = height,
+                boundsSizeX = bounds.sizeX,
+                boundsSizeY = bounds.sizeY
+            )
 
             val layerColors = listOf(
                 Color(0xFF00E5FF), Color(0xFFFFD700), Color(0xFF10B981),
@@ -77,22 +114,24 @@ fun Dxf2DRenderView(
 
             // Draw CAD Grid
             if (showGrid) {
-                val gridStep = maxDim / 10f
-                val gridColor = Color(0x2294A3B8)
+                val gridStep = (maxDim / 10f).coerceAtLeast(5f)
+                val gridColor = Color(0x2594A3B8)
 
-                for (i in -10..10) {
+                for (i in -15..15) {
                     val x = center.x + i * gridStep
-                    cameraState.projectFast(x, bounds.minY - maxDim, 0f, fastTransform, p1Arr)
-                    cameraState.projectFast(x, bounds.maxY + maxDim, 0f, fastTransform, p2Arr)
+                    cameraState.projectFast(x, bounds.minY - maxDim * 0.5f, 0f, fastTransform, p1Arr)
+                    cameraState.projectFast(x, bounds.maxY + maxDim * 0.5f, 0f, fastTransform, p2Arr)
                     drawLine(gridColor, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 1f)
                 }
-                for (j in -10..10) {
+                for (j in -15..15) {
                     val y = center.y + j * gridStep
-                    cameraState.projectFast(bounds.minX - maxDim, y, 0f, fastTransform, p1Arr)
-                    cameraState.projectFast(bounds.maxX + maxDim, y, 0f, fastTransform, p2Arr)
+                    cameraState.projectFast(bounds.minX - maxDim * 0.5f, y, 0f, fastTransform, p1Arr)
+                    cameraState.projectFast(bounds.maxX + maxDim * 0.5f, y, 0f, fastTransform, p2Arr)
                     drawLine(gridColor, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 1f)
                 }
             }
+
+            val strokeWidthPx = (2.2f * cameraState.zoom).coerceIn(1.5f, 6.0f)
 
             // Draw DXF Entities
             for (entity in model.entities) {
@@ -113,24 +152,24 @@ fun Dxf2DRenderView(
                     is DxfEntity.Line -> {
                         cameraState.projectFast(entity.start.x, entity.start.y, entity.start.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.end.x, entity.end.y, entity.end.z, fastTransform, p2Arr)
-                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = 2.5f)
+                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = strokeWidthPx)
                     }
                     is DxfEntity.Circle -> {
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
                         val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0])
-                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = 2.5f))
+                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = strokeWidthPx))
                     }
                     is DxfEntity.Ellipse -> {
                         val r = entity.majorAxis.length()
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.center.x + r, entity.center.y, entity.center.z, fastTransform, p2Arr)
                         val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0]).coerceAtLeast(3f)
-                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = 2.5f))
+                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = strokeWidthPx))
                     }
                     is DxfEntity.Arc -> {
                         path.reset()
-                        val steps = 16
+                        val steps = 24
                         val startRad = Math.toRadians(entity.startAngleDeg.toDouble())
                         val endRad = Math.toRadians(entity.endAngleDeg.toDouble())
                         var first = true
@@ -149,7 +188,7 @@ fun Dxf2DRenderView(
                                 path.lineTo(p1Arr[0], p1Arr[1])
                             }
                         }
-                        drawPath(path, color, style = Stroke(width = 2.5f))
+                        drawPath(path, color, style = Stroke(width = strokeWidthPx))
                     }
                     is DxfEntity.Polyline -> {
                         if (entity.points.isNotEmpty()) {
@@ -162,12 +201,15 @@ fun Dxf2DRenderView(
                                 path.lineTo(p1Arr[0], p1Arr[1])
                             }
                             if (entity.isClosed) path.close()
-                            drawPath(path, color, style = Stroke(width = 2.5f))
+                            drawPath(path, color, style = Stroke(width = strokeWidthPx))
                         }
                     }
                     is DxfEntity.TextEntity -> {
                         cameraState.projectFast(entity.position.x, entity.position.y, entity.position.z, fastTransform, p1Arr)
-                        drawCircle(color, radius = 4f, center = Offset(p1Arr[0], p1Arr[1]))
+                        val fontSizePx = (entity.height * fastTransform.finalScale).coerceIn(12f, 48f)
+                        textPaint.textSize = fontSizePx
+                        textPaint.color = color.toArgb()
+                        drawContext.canvas.nativeCanvas.drawText(entity.text, p1Arr[0], p1Arr[1], textPaint)
                     }
                 }
             }
