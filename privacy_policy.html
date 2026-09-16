@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - CNC 3D Toolpath Simulator & CAD Viewer</title>
+    <style>
+        :root {
+            --primary: #0284c7;
+            --primary-dark: #0369a1;
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #10b981;
+            --border: #334155;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            line-height: 1.7;
+            padding: 24px 16px;
+        }
+        .container {
+            max-width: 840px;
+            margin: 0 auto;
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            padding: 36px 28px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 26px;
+            color: #38bdf8;
+            margin-bottom: 8px;
+        }
+        .app-meta {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent);
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+        h2 {
+            font-size: 18px;
+            color: #f1f5f9;
+            margin-top: 24px;
+            margin-bottom: 10px;
+            border-left: 4px solid var(--primary);
+            padding-left: 10px;
+        }
+        p, li {
+            color: #cbd5e1;
+            font-size: 15px;
+            margin-bottom: 12px;
+        }
+        ul {
+            padding-left: 20px;
+            margin-bottom: 16px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .highlight-box {
+            background: rgba(14, 165, 233, 0.08);
+            border: 1px solid rgba(14, 165, 233, 0.25);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        .footer {
+            margin-top: 36px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+        a {
+            color: #38bdf8;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Privacy Policy</h1>
+        <div class="app-meta"><strong>Application:</strong> Toolpath Simulation with STL / CNC CAD Viewer</div>
+        <div class="app-meta"><strong>Package Name:</strong> <code>com.aistudio.toolpath.xrqz</code></div>
+        <div class="app-meta"><strong>Effective Date:</strong> September 13, 2026</div>
+        <div class="badge">100% Client-Side Local Processing</div>
+    </div>
+
+    <div class="highlight-box">
+        <strong>Summary:</strong> Our application respects your privacy. All your CNC CAD blueprints (.dxf, .dwg), 3D solid mesh files (.stl), ArtCAM relief files (.rlf), and G-code programs (.tap, .nc, .txt) are processed and simulated <strong>100% locally on your device</strong>. We do NOT collect, transmit, store, or sell your files or personal data.
+    </div>
+
+    <h2>1. Information We Do Not Collect</h2>
+    <p>We do not collect personally identifiable information (PII). In particular:</p>
+    <ul>
+        <li><strong>No CAD / CAM / G-Code File Uploads:</strong> When you open a .tap, .nc, .dxf, .stl, or .rlf file, it is parsed strictly in-memory inside your device's local memory and rendered using local GPU hardware acceleration. No files or geometries are ever uploaded to any cloud or third-party servers.</li>
+        <li><strong>No Account Required:</strong> You do not need to register, create an account, or log in with personal details to use this application.</li>
+        <li><strong>No Personal Files Access:</strong> The app only accesses files explicitly chosen by you through the Android Storage Access Framework (SAF) system file picker.</li>
+    </ul>
+
+    <h2>2. Permissions Used by the Application</h2>
+    <p>The application requests only minimal, necessary system permissions to function:</p>
+    <ul>
+        <li><strong>INTERNET & ACCESS_NETWORK_STATE:</strong> Required exclusively to load Google AdMob advertisements and check network reachability.</li>
+        <li><strong>VIBRATE:</strong> Used for optional haptic feedback when pressing CAD control buttons or starting/stopping simulations.</li>
+        <li><strong>WAKE_LOCK:</strong> Allows the screen to remain active during long continuous CNC toolpath playback without going to sleep.</li>
+        <li><strong>No Sensitive Permissions:</strong> The app does not request Camera, Microphone, GPS Location, Contacts, or broad Storage read/write permissions.</li>
+    </ul>
+
+    <h2>3. Advertising (Google AdMob)</h2>
+    <p>This application displays advertisements served by <strong>Google AdMob</strong> to keep the application free for users. AdMob may collect and process certain non-personally identifiable diagnostic and device information in accordance with Google's policies, such as:</p>
+    <ul>
+        <li>Device identifiers (e.g., Google Advertising ID - AAID)</li>
+        <li>IP address (for coarse geographic ad serving)</li>
+        <li>Crash data and performance diagnostic metrics</li>
+    </ul>
+    <p>To learn more about how Google uses data from apps that use its services, please visit: <br>
+        <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">How Google uses information from sites or apps that use our services</a>
+    </p>
+
+    <h2>4. Children's Privacy</h2>
+    <p>Our application is designed for general audiences, students, machinists, and engineers. It does not knowingly collect personal information from children under the age of 13.</p>
+
+    <h2>5. Security of Your Data</h2>
+    <p>Because all file parsing, 3D toolpath calculations, and CAD rendering happen offline directly on your mobile device, your proprietary CAD designs, NC programs, and machine instructions never leave your smartphone or tablet.</p>
+
+    <h2>6. Changes to This Privacy Policy</h2>
+    <p>We may update our Privacy Policy periodically. Any updates will be posted to this page with an updated effective date.</p>
+
+    <h2>7. Contact Us</h2>
+    <p>If you have any questions or suggestions regarding this Privacy Policy, please contact us at:</p>
+    <p><strong>Email:</strong> <a href="mailto:jitu1199pal@gmail.com">jitu1199pal@gmail.com</a></p>
+
+    <div class="footer">
+        &copy; 2026 CNC Toolpath & CAD Studio. All Rights Reserved.
+    </div>
+</div>
+
+</body>
+</html>

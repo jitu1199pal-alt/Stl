@@ -17,19 +17,19 @@ class CameraState {
     }
 
     fun scaleZoom(factor: Float) {
-        zoom = (zoom * factor).coerceIn(0.02f, 80f)
+        zoom = (zoom * factor).coerceIn(0.02f, 200f)
     }
 
     fun zoomIn() {
-        scaleZoom(1.30f)
+        scaleZoom(1.35f)
     }
 
     fun zoomOut() {
-        scaleZoom(1f / 1.30f)
+        scaleZoom(1f / 1.35f)
     }
 
     fun setZoomLevel(newZoom: Float) {
-        zoom = newZoom.coerceIn(0.02f, 80f)
+        zoom = newZoom.coerceIn(0.02f, 200f)
     }
 
     fun pan(dx: Float, dy: Float) {

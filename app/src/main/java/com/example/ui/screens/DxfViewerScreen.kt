@@ -53,6 +53,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +89,13 @@ fun DxfViewerScreen(
     var showGrid by remember { mutableStateOf(true) }
     var showLayersSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+
+    // Automatically fit to screen whenever a DXF model is loaded or changed
+    LaunchedEffect(dxfModel) {
+        if (dxfModel != null) {
+            cameraState.fitToScreen()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -359,9 +367,9 @@ fun DxfViewerScreen(
                             }
 
                             Slider(
-                                value = cameraState.zoom,
+                                value = cameraState.zoom.coerceIn(0.1f, 30.0f),
                                 onValueChange = { cameraState.setZoomLevel(it) },
-                                valueRange = 0.2f..6.0f,
+                                valueRange = 0.1f..30.0f,
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("dxf_zoom_slider"),
@@ -385,12 +393,12 @@ fun DxfViewerScreen(
                             }
 
                             Text(
-                                text = "${(cameraState.zoom * 100).toInt()}%",
+                                text = if (cameraState.zoom >= 10f) "${cameraState.zoom.toInt()}x" else "${(cameraState.zoom * 100).toInt()}%",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color.White,
-                                modifier = Modifier.width(46.dp),
+                                modifier = Modifier.width(52.dp),
                                 textAlign = TextAlign.End
                             )
                         }
@@ -407,8 +415,8 @@ fun DxfViewerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ZoomPresetChip(
-                                label = "FIT SCREEN",
-                                isSelected = false,
+                                label = "FIT SCREEN (स्क्रीन फ़िट)",
+                                isSelected = (cameraState.zoom in 0.95f..1.05f && cameraState.panX == 0f && cameraState.panY == 0f),
                                 accentColor = Color(0xFFFFD700)
                             ) {
                                 cameraState.fitToScreen()
@@ -431,14 +439,6 @@ fun DxfViewerScreen(
                             }
 
                             ZoomPresetChip(
-                                label = "150%",
-                                isSelected = (cameraState.zoom in 1.45f..1.55f),
-                                accentColor = Color(0xFF10B981)
-                            ) {
-                                cameraState.setZoomLevel(1.5f)
-                            }
-
-                            ZoomPresetChip(
                                 label = "200%",
                                 isSelected = (cameraState.zoom in 1.95f..2.05f),
                                 accentColor = Color(0xFF10B981)
@@ -447,19 +447,35 @@ fun DxfViewerScreen(
                             }
 
                             ZoomPresetChip(
-                                label = "300%",
-                                isSelected = (cameraState.zoom in 2.95f..3.05f),
+                                label = "500%",
+                                isSelected = (cameraState.zoom in 4.95f..5.05f),
                                 accentColor = Color(0xFFA855F7)
                             ) {
-                                cameraState.setZoomLevel(3.0f)
+                                cameraState.setZoomLevel(5.0f)
                             }
 
                             ZoomPresetChip(
-                                label = "500%",
-                                isSelected = (cameraState.zoom in 4.95f..5.05f),
+                                label = "1000% (10x)",
+                                isSelected = (cameraState.zoom in 9.5f..10.5f),
+                                accentColor = Color(0xFFF59E0B)
+                            ) {
+                                cameraState.setZoomLevel(10.0f)
+                            }
+
+                            ZoomPresetChip(
+                                label = "2500% (25x)",
+                                isSelected = (cameraState.zoom in 24.5f..25.5f),
                                 accentColor = Color(0xFFF43F5E)
                             ) {
-                                cameraState.setZoomLevel(5.0f)
+                                cameraState.setZoomLevel(25.0f)
+                            }
+
+                            ZoomPresetChip(
+                                label = "5000% (50x)",
+                                isSelected = (cameraState.zoom in 49.5f..50.5f),
+                                accentColor = Color(0xFFEC4899)
+                            ) {
+                                cameraState.setZoomLevel(50.0f)
                             }
                         }
                     }

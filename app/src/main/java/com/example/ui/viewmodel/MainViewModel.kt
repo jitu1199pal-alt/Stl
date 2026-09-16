@@ -86,7 +86,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val stl = repository.parseStlFromUri(uri, fileName)
                         _activeModel.value = ActiveModel.STL(stl)
                     }
-                    lower.endsWith(".dxf") -> {
+                    lower.endsWith(".dxf") || lower.endsWith(".dwg") -> {
                         val dxf = repository.parseDxfFromUri(uri, fileName)
                         _activeModel.value = ActiveModel.DXF(dxf)
                         _dxfVisibleLayers.value = dxf.layers.toSet()

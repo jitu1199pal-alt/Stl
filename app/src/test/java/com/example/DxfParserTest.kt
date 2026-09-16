@@ -1,0 +1,91 @@
+package com.example
+
+import com.example.data.parser.DxfEntity
+import com.example.data.parser.DxfParser
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DxfParserTest {
+
+    @Test
+    fun testAutoCadDxfParsingAndBounds() {
+        val sampleDxf = """
+0
+SECTION
+2
+HEADER
+9
+${'$'}EXTMIN
+10
+-1.000000000000000E+20
+20
+-1.000000000000000E+20
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LINE
+8
+WALLS
+10
+100.0
+20
+200.0
+11
+300.0
+21
+200.0
+0
+POLYLINE
+8
+OUTLINE
+70
+1
+0
+VERTEX
+10
+100.0
+20
+200.0
+0
+VERTEX
+10
+300.0
+20
+400.0
+0
+SEQEND
+0
+CIRCLE
+8
+HOLES
+10
+200.0
+20
+300.0
+40
+25.0
+0
+ENDSEC
+0
+EOF
+        """.trimIndent()
+
+        val model = DxfParser.parse("test.dxf", sampleDxf)
+
+        assertTrue("Entities should not be empty", model.entities.isNotEmpty())
+        assertEquals(3, model.entities.size)
+        assertTrue("Contains line", model.entities[0] is DxfEntity.Line)
+        assertTrue("Contains polyline from VERTEX", model.entities[1] is DxfEntity.Polyline)
+        assertTrue("Contains circle", model.entities[2] is DxfEntity.Circle)
+
+        // Verify bounds are sane and not corrupted by HEADER
+        assertTrue("minX should be >= 100", model.bounds.minX >= 90f)
+        assertTrue("maxX should be <= 310", model.bounds.maxX <= 310f)
+        assertTrue("sizeX should be positive and reasonable", model.bounds.sizeX in 100f..300f)
+    }
+}
