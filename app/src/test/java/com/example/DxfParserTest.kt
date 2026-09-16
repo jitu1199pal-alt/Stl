@@ -88,4 +88,47 @@ EOF
         assertTrue("maxX should be <= 310", model.bounds.maxX <= 310f)
         assertTrue("sizeX should be positive and reasonable", model.bounds.sizeX in 100f..300f)
     }
+
+    @Test
+    fun testLwPolylineBulgeExpandsToSmoothCurve() {
+        // A semicircle from (0,0) to (2,0) with bulge = 1.0 (semi-circular arch)
+        val dxfWithBulge = """
+0
+SECTION
+2
+ENTITIES
+0
+LWPOLYLINE
+8
+PETALS
+70
+0
+90
+2
+10
+0.0
+20
+0.0
+42
+1.0
+10
+2.0
+20
+0.0
+0
+ENDSEC
+0
+EOF
+        """.trimIndent()
+
+        val model = DxfParser.parse("bulge_test.dxf", dxfWithBulge)
+        assertEquals(1, model.entities.size)
+        val poly = model.entities[0] as DxfEntity.Polyline
+
+        // Because of bulge 1.0, it should interpolate multiple points along the smooth circular arc
+        assertTrue("Polyline points should be smoothly expanded (at least 10 points)", poly.points.size >= 10)
+        // Check that apex is around (1.0, 1.0)
+        val maxY = poly.points.maxOf { it.y }
+        assertTrue("Apex of arc should reach near 1.0 (radius)", maxY in 0.95f..1.05f)
+    }
 }

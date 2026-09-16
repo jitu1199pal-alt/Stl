@@ -84,12 +84,24 @@ fun HomeScreen(
         uri?.let {
             val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "imported_file"
             viewModel.openUri(it, fileName)
+            val lower = fileName.lowercase()
             when {
-                fileName.endsWith(".stl", ignoreCase = true) -> onNavigateToStlViewer()
-                fileName.endsWith(".dxf", ignoreCase = true) -> onNavigateToDxfViewer()
-                fileName.endsWith(".rlf", ignoreCase = true) -> onNavigateToRlfViewer()
+                lower.endsWith(".stl") -> onNavigateToStlViewer()
+                lower.endsWith(".dxf") || lower.endsWith(".dwg") -> onNavigateToDxfViewer()
+                lower.endsWith(".rlf") -> onNavigateToRlfViewer()
                 else -> onNavigateToProgramViewer()
             }
+        }
+    }
+
+    // Dedicated AutoCAD File Picker: directly opens AutoCAD Drawing Viewer upon selection
+    val autocadFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dxf"
+            viewModel.openUri(it, fileName)
+            onNavigateToDxfViewer()
         }
     }
 
@@ -225,16 +237,16 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "Program (.tap .nc .bin)",
-                        subtitle = "G-Code Toolpath 3D",
+                        title = "Toolpath Simulation",
+                        subtitle = "G-Code (.tap .nc .bin)",
                         icon = Icons.Default.Code,
                         accentColor = Color(0xFF00E5FF),
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "3D Mesh (.stl)",
-                        subtitle = "3D Geometry Viewer",
+                        title = "STL Viewer",
+                        subtitle = "3D Mesh (.stl)",
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFFFD700),
                         modifier = Modifier.weight(1f),
@@ -247,29 +259,101 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "ArtCAM Relief (.rlf)",
-                        subtitle = "3D Relief Carving Surface",
+                        title = "RLF File Viewer",
+                        subtitle = "ArtCAM Relief (.rlf)",
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFDA984B),
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "CAD Drawing (.dxf)",
-                        subtitle = "Vector Layers Viewer",
+                        title = "AutoCAD Viewer",
+                        subtitle = "CAD Drawing (.dxf .dwg)",
                         icon = Icons.Default.Layers,
                         accentColor = Color(0xFF10B981),
                         modifier = Modifier.weight(1f),
-                        onClick = { filePicker.launch(arrayOf("*/*")) }
+                        onClick = { autocadFilePicker.launch(arrayOf("*/*")) }
                     )
                 }
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Prominent Dedicated AutoCAD Viewer Option (Direct File Selection)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { autocadFilePicker.launch(arrayOf("*/*")) },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF059669)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Layers,
+                                contentDescription = "AutoCAD Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "AutoCAD Viewer",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = ".DXF / .DWG",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "ऑटोकेड फ़ाइल चुनें (.dxf, .dwg) • तुरंत फ़िट स्क्रीन में खुलेगी",
+                                fontSize = 11.sp,
+                                color = Color(0xFFA7F3D0)
+                            )
+                        }
+                        Button(
+                            onClick = { autocadFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Select File", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(12.dp))
+
                 // Dedicated AutoCAD Drawings Folder Card
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onNavigateToCadFolder() },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
@@ -280,16 +364,16 @@ fun HomeScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(46.dp)
+                                .size(44.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF059669)),
+                                .background(Color(0xFF1E293B)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Default.FolderOpen,
                                 contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp)
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -297,36 +381,36 @@ fun HomeScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     text = "AutoCAD Drawings Folder",
-                                    fontSize = 15.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF334155), RoundedCornerShape(4.dp))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "NEW FOLDER",
+                                        text = "BROWSE",
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.Black
+                                        color = Color(0xFF94A3B8)
                                     )
                                 }
                             }
                             Text(
-                                text = "ऑटोकेड ड्राइंग्स फ़ोल्डर • View & open CAD blueprints (.dxf, .dwg)",
+                                text = "ऑटोकेड ड्राइंग्स फ़ोल्डर • Browse device folders for drawings",
                                 fontSize = 11.sp,
-                                color = Color(0xFFA7F3D0)
+                                color = Color(0xFF94A3B8)
                             )
                         }
                         Button(
                             onClick = onNavigateToCadFolder,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Text("Open", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Browse", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }

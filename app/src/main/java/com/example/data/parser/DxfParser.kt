@@ -19,6 +19,13 @@ sealed class DxfEntity {
     data class Ellipse(val layer: String, val center: Vector3D, val majorAxis: Vector3D, val axisRatio: Float) : DxfEntity()
 }
 
+data class RawVertex(
+    val x: Float,
+    val y: Float,
+    val z: Float = 0f,
+    var bulge: Float = 0f
+)
+
 data class DxfModel(
     val fileName: String,
     val entities: List<DxfEntity>,
@@ -62,12 +69,18 @@ object DxfParser {
         var insertRotDeg = 0f
 
         // Polyline / vertex collection
-        val polyPoints = ArrayList<Vector3D>(256)
+        val rawPolyVertices = ArrayList<RawVertex>(512)
+        val splinePoints = ArrayList<Vector3D>(256)
         var polyClosed = false
         var currentPolyX = 0f
         var currentPolyY = 0f
         var currentPolyZ = 0f
+        var currentBulge = 0f
         var hasPolyX = false
+        var currentSplineX = 0f
+        var currentSplineY = 0f
+        var currentSplineZ = 0f
+        var hasSplineX = false
 
         fun resetEntityFields() {
             x1 = 0f; y1 = 0f; z1 = 0f
@@ -80,10 +93,13 @@ object DxfParser {
             insertScaleX = 1f; insertScaleY = 1f; insertScaleZ = 1f
             insertRotDeg = 0f
             isPaperSpace = false
-            polyPoints.clear()
+            rawPolyVertices.clear()
+            splinePoints.clear()
             polyClosed = false
             hasPolyX = false
-            currentPolyX = 0f; currentPolyY = 0f; currentPolyZ = 0f
+            hasSplineX = false
+            currentPolyX = 0f; currentPolyY = 0f; currentPolyZ = 0f; currentBulge = 0f
+            currentSplineX = 0f; currentSplineY = 0f; currentSplineZ = 0f
         }
 
         fun addEntity(entity: DxfEntity) {
@@ -116,26 +132,27 @@ object DxfParser {
                         addEntity(entity)
                     }
                 }
-                "LWPOLYLINE" -> {
+                "LWPOLYLINE", "POLYLINE" -> {
                     if (hasPolyX) {
-                        polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                        rawPolyVertices.add(RawVertex(currentPolyX, currentPolyY, currentPolyZ, currentBulge))
                         hasPolyX = false
                     }
-                    if (polyPoints.isNotEmpty()) {
-                        val entity = DxfEntity.Polyline(currentLayer, ArrayList(polyPoints), polyClosed)
-                        addEntity(entity)
-                    }
-                }
-                "POLYLINE" -> {
-                    // AutoCAD classic polyline vertices were captured via child VERTEX records
-                    if (polyPoints.isNotEmpty()) {
-                        val entity = DxfEntity.Polyline(currentLayer, ArrayList(polyPoints), polyClosed)
-                        addEntity(entity)
+                    if (rawPolyVertices.isNotEmpty()) {
+                        val smoothPoints = expandPolylineWithBulges(rawPolyVertices, polyClosed)
+                        if (smoothPoints.isNotEmpty()) {
+                            val entity = DxfEntity.Polyline(currentLayer, smoothPoints, polyClosed)
+                            addEntity(entity)
+                        }
                     }
                 }
                 "SPLINE" -> {
-                    if (polyPoints.isNotEmpty()) {
-                        val entity = DxfEntity.Polyline(currentLayer, ArrayList(polyPoints), isClosed = false)
+                    if (hasSplineX) {
+                        splinePoints.add(Vector3D(currentSplineX, currentSplineY, currentSplineZ))
+                        hasSplineX = false
+                    }
+                    if (splinePoints.isNotEmpty()) {
+                        val smoothPoints = interpolateSpline(splinePoints, isClosed = polyClosed)
+                        val entity = DxfEntity.Polyline(currentLayer, smoothPoints, isClosed = polyClosed)
                         addEntity(entity)
                     }
                 }
@@ -193,7 +210,8 @@ object DxfParser {
                                 }
                                 is DxfEntity.Ellipse -> {
                                     val tc = transformBlockPoint(src.center, x1, y1, z1, insertScaleX, insertScaleY, insertScaleZ, cosR, sinR)
-                                    addEntity(DxfEntity.Circle(currentLayer, tc, src.majorAxis.length() * abs(insertScaleX)))
+                                    val tMajor = transformBlockPoint(src.majorAxis, 0f, 0f, 0f, insertScaleX, insertScaleY, insertScaleZ, cosR, sinR)
+                                    addEntity(DxfEntity.Ellipse(currentLayer, tc, tMajor, src.axisRatio))
                                 }
                             }
                         }
@@ -237,16 +255,17 @@ object DxfParser {
                     currentType = ""
                 } else if (newType == "VERTEX") {
                     if (hasPolyX) {
-                        polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                        rawPolyVertices.add(RawVertex(currentPolyX, currentPolyY, currentPolyZ, currentBulge))
                         currentPolyX = 0f
                         currentPolyY = 0f
                         currentPolyZ = 0f
+                        currentBulge = 0f
                         hasPolyX = false
                     }
                     // Keep currentType as POLYLINE, vertex coordinates will follow
                 } else if (newType == "SEQEND") {
                     if (hasPolyX) {
-                        polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                        rawPolyVertices.add(RawVertex(currentPolyX, currentPolyY, currentPolyZ, currentBulge))
                         hasPolyX = false
                     }
                     finalizeCurrentEntity()
@@ -270,13 +289,17 @@ object DxfParser {
                 when (code) {
                     10 -> {
                         if (hasPolyX) {
-                            polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                            rawPolyVertices.add(RawVertex(currentPolyX, currentPolyY, currentPolyZ, currentBulge))
                         }
                         currentPolyX = value.toFloatOrNull() ?: 0f
+                        currentPolyY = 0f
+                        currentPolyZ = 0f
+                        currentBulge = 0f
                         hasPolyX = true
                     }
                     20 -> currentPolyY = value.toFloatOrNull() ?: 0f
                     30 -> currentPolyZ = value.toFloatOrNull() ?: 0f
+                    42 -> currentBulge = value.toFloatOrNull() ?: 0f
                     70 -> {
                         val flag = value.toIntOrNull() ?: 0
                         polyClosed = (flag and 1) != 0
@@ -290,23 +313,34 @@ object DxfParser {
                     }
                     10 -> {
                         if (hasPolyX) {
-                            polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                            rawPolyVertices.add(RawVertex(currentPolyX, currentPolyY, currentPolyZ, currentBulge))
                         }
                         currentPolyX = value.toFloatOrNull() ?: 0f
                         currentPolyY = 0f
                         currentPolyZ = 0f
+                        currentBulge = 0f
                         hasPolyX = true
                     }
                     20 -> currentPolyY = value.toFloatOrNull() ?: 0f
                     30 -> currentPolyZ = value.toFloatOrNull() ?: 0f
+                    42 -> currentBulge = value.toFloatOrNull() ?: 0f
                 }
             } else if (currentType == "SPLINE") {
                 when (code) {
-                    10, 11 -> currentPolyX = value.toFloatOrNull() ?: 0f
-                    20, 21 -> currentPolyY = value.toFloatOrNull() ?: 0f
-                    30, 31 -> {
-                        currentPolyZ = value.toFloatOrNull() ?: 0f
-                        polyPoints.add(Vector3D(currentPolyX, currentPolyY, currentPolyZ))
+                    10, 11 -> {
+                        if (hasSplineX) {
+                            splinePoints.add(Vector3D(currentSplineX, currentSplineY, currentSplineZ))
+                        }
+                        currentSplineX = value.toFloatOrNull() ?: 0f
+                        currentSplineY = 0f
+                        currentSplineZ = 0f
+                        hasSplineX = true
+                    }
+                    20, 21 -> currentSplineY = value.toFloatOrNull() ?: 0f
+                    30, 31 -> currentSplineZ = value.toFloatOrNull() ?: 0f
+                    70 -> {
+                        val flag = value.toIntOrNull() ?: 0
+                        polyClosed = (flag and 1) != 0
                     }
                 }
             } else {
@@ -351,6 +385,119 @@ object DxfParser {
             layers = if (layerSet.isEmpty()) listOf("0") else layerSet.toList().sorted(),
             bounds = bounds
         )
+    }
+
+    /**
+     * Expands AutoCAD polylines that have bulge values (group code 42) into smooth circular arcs.
+     * In AutoCAD DXF, bulge = tan(included_angle / 4).
+     * If bulge != 0, the segment between vertices is an exact circular arc.
+     * This eliminates faceted, zig-zag lines on curves (flowers, arches, peacock toran, etc.).
+     */
+    fun expandPolylineWithBulges(
+        vertices: List<RawVertex>,
+        isClosed: Boolean
+    ): List<Vector3D> {
+        if (vertices.isEmpty()) return emptyList()
+        if (vertices.size == 1) return listOf(Vector3D(vertices[0].x, vertices[0].y, vertices[0].z))
+
+        val result = ArrayList<Vector3D>(vertices.size * 16)
+        val numSegments = if (isClosed) vertices.size else vertices.size - 1
+
+        for (i in 0 until numSegments) {
+            val v1 = vertices[i]
+            val v2 = vertices[(i + 1) % vertices.size]
+            val b = v1.bulge
+
+            // Add starting vertex of this segment
+            result.add(Vector3D(v1.x, v1.y, v1.z))
+
+            // If segment has a curved bulge, interpolate true circular arc
+            if (abs(b) >= 1e-4f) {
+                val dx = (v2.x - v1.x).toDouble()
+                val dy = (v2.y - v1.y).toDouble()
+                val chord = kotlin.math.hypot(dx, dy)
+
+                if (chord > 1e-5) {
+                    val radius = (chord / 2.0) * (1.0 + b * b) / (2.0 * abs(b))
+                    val h = (chord / 2.0) * (1.0 - b * b) / (2.0 * b)
+
+                    val mx = (v1.x + v2.x) / 2.0
+                    val my = (v1.y + v2.y) / 2.0
+
+                    val cx = mx + (dy / chord) * h
+                    val cy = my - (dx / chord) * h
+
+                    val startAngle = kotlin.math.atan2(v1.y.toDouble() - cy, v1.x.toDouble() - cx)
+                    val endAngle = kotlin.math.atan2(v2.y.toDouble() - cy, v2.x.toDouble() - cx)
+
+                    var sweep = endAngle - startAngle
+                    if (b > 0) {
+                        while (sweep >= 0.0) sweep -= 2.0 * Math.PI
+                        while (sweep < -2.0 * Math.PI) sweep += 2.0 * Math.PI
+                    } else {
+                        while (sweep <= 0.0) sweep += 2.0 * Math.PI
+                        while (sweep > 2.0 * Math.PI) sweep -= 2.0 * Math.PI
+                    }
+
+                    val steps = kotlin.math.max(12, (kotlin.math.abs(sweep) / (Math.PI / 24.0)).toInt()).coerceAtMost(64)
+                    for (s in 1 until steps) {
+                        val frac = s.toDouble() / steps
+                        val ang = startAngle + sweep * frac
+                        val px = (cx + radius * kotlin.math.cos(ang)).toFloat()
+                        val py = (cy + radius * kotlin.math.sin(ang)).toFloat()
+                        val pz = v1.z + (v2.z - v1.z) * frac.toFloat()
+                        result.add(Vector3D(px, py, pz))
+                    }
+                }
+            }
+        }
+
+        if (!isClosed) {
+            val last = vertices.last()
+            result.add(Vector3D(last.x, last.y, last.z))
+        }
+
+        return result
+    }
+
+    /**
+     * Interpolates AutoCAD SPLINE control / fit points into a continuous smooth curve
+     * using cubic Catmull-Rom spline interpolation so that splines do not look like zig-zag lines.
+     */
+    fun interpolateSpline(points: List<Vector3D>, isClosed: Boolean): List<Vector3D> {
+        if (points.size <= 2) return points
+        val result = ArrayList<Vector3D>(points.size * 16)
+        val pts = ArrayList(points)
+        if (isClosed) {
+            pts.add(0, points.last())
+            pts.add(points[0])
+            pts.add(points[1])
+        } else {
+            pts.add(0, points.first())
+            pts.add(points.last())
+        }
+
+        val stepsPerSegment = 16
+        for (i in 1 until pts.size - 2) {
+            val p0 = pts[i - 1]
+            val p1 = pts[i]
+            val p2 = pts[i + 1]
+            val p3 = pts[i + 2]
+
+            for (step in 0 until stepsPerSegment) {
+                val t = step.toFloat() / stepsPerSegment
+                val t2 = t * t
+                val t3 = t2 * t
+
+                val x = 0.5f * ((2f * p1.x) + (-p0.x + p2.x) * t + (2f * p0.x - 5f * p1.x + 4f * p2.x - p3.x) * t2 + (-p0.x + 3f * p1.x - 3f * p2.x + p3.x) * t3)
+                val y = 0.5f * ((2f * p1.y) + (-p0.y + p2.y) * t + (2f * p0.y - 5f * p1.y + 4f * p2.y - p3.y) * t2 + (-p0.y + 3f * p1.y - 3f * p2.y + p3.y) * t3)
+                val z = 0.5f * ((2f * p1.z) + (-p0.z + p2.z) * t + (2f * p0.z - 5f * p1.z + 4f * p2.z - p3.z) * t2 + (-p0.z + 3f * p1.z - 3f * p2.z + p3.z) * t3)
+
+                result.add(Vector3D(x, y, z))
+            }
+        }
+        result.add(points.last())
+        return result
     }
 
     private fun transformBlockPoint(

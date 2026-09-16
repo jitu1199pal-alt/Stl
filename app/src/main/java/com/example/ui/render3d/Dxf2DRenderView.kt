@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -148,38 +150,62 @@ fun Dxf2DRenderView(
 
                 val color = getLayerColor(layerName)
 
+                val strokeStyle = Stroke(width = strokeWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
                 when (entity) {
                     is DxfEntity.Line -> {
                         cameraState.projectFast(entity.start.x, entity.start.y, entity.start.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.end.x, entity.end.y, entity.end.z, fastTransform, p2Arr)
-                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = strokeWidthPx)
+                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = strokeWidthPx, cap = StrokeCap.Round)
                     }
                     is DxfEntity.Circle -> {
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
                         val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0])
-                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = strokeWidthPx))
+                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = strokeStyle)
                     }
                     is DxfEntity.Ellipse -> {
-                        val r = entity.majorAxis.length()
-                        cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
-                        cameraState.projectFast(entity.center.x + r, entity.center.y, entity.center.z, fastTransform, p2Arr)
-                        val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0]).coerceAtLeast(3f)
-                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = Stroke(width = strokeWidthPx))
+                        path.reset()
+                        val majorLen = entity.majorAxis.length().toDouble()
+                        val minorLen = (majorLen * entity.axisRatio.toDouble()).coerceAtLeast(0.001)
+                        val rotAngle = kotlin.math.atan2(entity.majorAxis.y.toDouble(), entity.majorAxis.x.toDouble())
+                        val cosR = kotlin.math.cos(rotAngle)
+                        val sinR = kotlin.math.sin(rotAngle)
+
+                        val steps = 64
+                        for (step in 0..steps) {
+                            val theta = 2.0 * Math.PI * step / steps
+                            val lx = majorLen * kotlin.math.cos(theta)
+                            val ly = minorLen * kotlin.math.sin(theta)
+                            val wx = (entity.center.x + lx * cosR - ly * sinR).toFloat()
+                            val wy = (entity.center.y + lx * sinR + ly * cosR).toFloat()
+                            cameraState.projectFast(wx, wy, entity.center.z, fastTransform, p1Arr)
+                            if (step == 0) {
+                                path.moveTo(p1Arr[0], p1Arr[1])
+                            } else {
+                                path.lineTo(p1Arr[0], p1Arr[1])
+                            }
+                        }
+                        path.close()
+                        drawPath(path, color, style = strokeStyle)
                     }
                     is DxfEntity.Arc -> {
                         path.reset()
-                        val steps = 24
-                        val startRad = Math.toRadians(entity.startAngleDeg.toDouble())
-                        val endRad = Math.toRadians(entity.endAngleDeg.toDouble())
+                        var startRad = Math.toRadians(entity.startAngleDeg.toDouble())
+                        var endRad = Math.toRadians(entity.endAngleDeg.toDouble())
+                        while (endRad <= startRad) {
+                            endRad += 2.0 * Math.PI
+                        }
+                        val sweep = endRad - startRad
+                        val steps = kotlin.math.max(36, (sweep / (Math.PI / 36.0)).toInt()).coerceAtMost(128)
                         var first = true
 
                         for (step in 0..steps) {
                             val t = step / steps.toFloat()
-                            val ang = startRad + t * (endRad - startRad)
+                            val ang = startRad + t * sweep
                             val ax = entity.center.x + entity.radius * cos(ang).toFloat()
                             val ay = entity.center.y + entity.radius * sin(ang).toFloat()
-                            cameraState.projectFast(ax, ay, 0f, fastTransform, p1Arr)
+                            cameraState.projectFast(ax, ay, entity.center.z, fastTransform, p1Arr)
 
                             if (first) {
                                 path.moveTo(p1Arr[0], p1Arr[1])
@@ -188,7 +214,7 @@ fun Dxf2DRenderView(
                                 path.lineTo(p1Arr[0], p1Arr[1])
                             }
                         }
-                        drawPath(path, color, style = Stroke(width = strokeWidthPx))
+                        drawPath(path, color, style = strokeStyle)
                     }
                     is DxfEntity.Polyline -> {
                         if (entity.points.isNotEmpty()) {
@@ -201,7 +227,7 @@ fun Dxf2DRenderView(
                                 path.lineTo(p1Arr[0], p1Arr[1])
                             }
                             if (entity.isClosed) path.close()
-                            drawPath(path, color, style = Stroke(width = strokeWidthPx))
+                            drawPath(path, color, style = strokeStyle)
                         }
                     }
                     is DxfEntity.TextEntity -> {
