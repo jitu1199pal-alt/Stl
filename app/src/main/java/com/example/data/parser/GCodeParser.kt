@@ -44,7 +44,9 @@ data class ToolpathModel(
     val maxFeedRate: Float,
     val maxRpm: Float,
     val toolsUsed: List<Int>,
-    val totalGCodeLines: Int = rawLines.size
+    val totalGCodeLines: Int = rawLines.size,
+    val cuttingMinZ: Float = bounds.minZ,
+    val cuttingMaxZ: Float = bounds.maxZ
 )
 
 object GCodeParser {
@@ -73,13 +75,17 @@ object GCodeParser {
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
         var minZ = Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        var cutMinZ = Float.MAX_VALUE; var cutMaxZ = -Float.MAX_VALUE
 
-        fun updateBounds(x: Float, y: Float, z: Float) {
+        fun updateBounds(x: Float, y: Float, z: Float, isCutting: Boolean) {
             if (x < minX) minX = x; if (x > maxX) maxX = x
             if (y < minY) minY = y; if (y > maxY) maxY = y
             if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+            if (isCutting) {
+                if (z < cutMinZ) cutMinZ = z
+                if (z > cutMaxZ) cutMaxZ = z
+            }
         }
-        updateBounds(0f, 0f, 0f)
 
         var totalLength = 0f
         var totalEstSeconds = 0f
@@ -171,6 +177,7 @@ object GCodeParser {
                         if (isCw && endAngle >= startAngle) endAngle -= (2 * PI).toFloat()
                         if (!isCw && endAngle <= startAngle) endAngle += (2 * PI).toFloat()
 
+                        val isCut = currMotion != MotionType.RAPID_G0
                         val steps = 8
                         val arcList = ArrayList<Vector3D>(steps + 1)
                         for (step in 0..steps) {
@@ -180,12 +187,13 @@ object GCodeParser {
                             val ay = centerY + radius * sin(ang)
                             val az = currZ + t * (targetZ - currZ)
                             arcList.add(Vector3D(ax, ay, az))
-                            updateBounds(ax, ay, az)
+                            updateBounds(ax, ay, az, isCut)
                         }
                         arcPts = arcList
                         segLength = abs(endAngle - startAngle) * radius
                     } else {
-                        updateBounds(targetX, targetY, targetZ)
+                        val isCut = currMotion != MotionType.RAPID_G0
+                        updateBounds(targetX, targetY, targetZ, isCut)
                     }
 
                     totalLength += segLength
@@ -236,6 +244,9 @@ object GCodeParser {
         if (minY > maxY) { minY = 0f; maxY = 100f }
         if (minZ > maxZ) { minZ = -10f; maxZ = 10f }
 
+        val finalCutMinZ = if (cutMinZ <= cutMaxZ) cutMinZ else minZ
+        val finalCutMaxZ = if (cutMinZ <= cutMaxZ) cutMaxZ else maxZ
+
         return ToolpathModel(
             fileName = fileName,
             rawLines = rawLinesPreview,
@@ -246,7 +257,9 @@ object GCodeParser {
             maxFeedRate = maxF,
             maxRpm = maxS,
             toolsUsed = toolsSet.toList().sorted(),
-            totalGCodeLines = lineNo
+            totalGCodeLines = lineNo,
+            cuttingMinZ = finalCutMinZ,
+            cuttingMaxZ = finalCutMaxZ
         )
     }
 

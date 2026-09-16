@@ -6,8 +6,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
-import com.example.data.parser.RlfModel
-import com.example.data.parser.RlfParser
 import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
 import com.example.data.repository.FileRepository
@@ -25,7 +23,6 @@ sealed class ActiveModel {
     data class GCode(val model: ToolpathModel) : ActiveModel()
     data class STL(val model: StlModel) : ActiveModel()
     data class DXF(val model: DxfModel) : ActiveModel()
-    data class RLF(val model: RlfModel) : ActiveModel()
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,10 +88,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val dxf = repository.parseDxfFromUri(uri, fileName)
                         _activeModel.value = ActiveModel.DXF(dxf)
                         _dxfVisibleLayers.value = dxf.layers.toSet()
-                    }
-                    lower.endsWith(".rlf") -> {
-                        val rlf = repository.parseRlfFromUri(uri, fileName)
-                        _activeModel.value = ActiveModel.RLF(rlf)
                     }
                     else -> { // .bin, .tap, .nc, .txt, .gcode, .cnc, .din
                         val gcode = repository.parseGCodeFromUri(uri, fileName)
@@ -181,55 +174,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isLoading.value = false
             }
-        }
-    }
-
-    fun loadSampleRlf() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val rlf = repository.loadSampleRlf()
-                _activeModel.value = ActiveModel.RLF(rlf)
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun updateRlfSettings(
-        depthScale: Float? = null,
-        invertZ: Boolean? = null,
-        flipY: Boolean? = null,
-        flipX: Boolean? = null,
-        transpose: Boolean? = null,
-        gridResolution: Int? = null,
-        isInverted: Boolean? = null,
-        isFlippedY: Boolean? = null,
-        isFlippedX: Boolean? = null,
-        isTransposed: Boolean? = null,
-        showBaseBlock: Boolean? = null,
-        strideDelta: Int? = null,
-        isSigned16: Boolean? = null,
-        cropToRelief: Boolean? = null
-    ) {
-        val current = (_activeModel.value as? ActiveModel.RLF)?.model ?: return
-        viewModelScope.launch {
-            val updated = RlfParser.rebuildModel(
-                model = current,
-                depthScale = depthScale ?: current.depthScale,
-                invertZ = isInverted ?: invertZ ?: current.invertZ,
-                flipY = isFlippedY ?: flipY ?: current.flipY,
-                flipX = isFlippedX ?: flipX ?: current.flipX,
-                transpose = isTransposed ?: transpose ?: current.transpose,
-                gridResolution = gridResolution ?: current.gridResolution,
-                showBaseBlock = showBaseBlock ?: current.showBaseBlock,
-                strideDelta = strideDelta ?: current.customStrideDelta,
-                isSigned16 = isSigned16 ?: current.isSigned16,
-                cropToRelief = cropToRelief ?: current.cropToRelief
-            )
-            _activeModel.value = ActiveModel.RLF(updated)
         }
     }
 

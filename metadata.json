@@ -1,6 +1,6 @@
 {
   "name": "Toolpath Simulation with STL",
-  "description": "Ultra-smooth 3D CNC Toolpath Simulator (.tap, .nc, .bin), 3D STL Solid Mesh Viewer, AutoCAD Drawings Folder (.dxf), and ArtCAM 3D Relief Viewer with 60 FPS GPU controls.",
+  "description": "Ultra-smooth 3D CNC Toolpath Simulator (.tap, .nc, .bin), 3D STL Solid Mesh Viewer, and AutoCAD Drawings Viewer & Folder (.dxf) with 60 FPS GPU controls.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

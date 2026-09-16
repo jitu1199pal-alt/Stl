@@ -63,7 +63,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         "1. 100% Offline Local Processing:\n" +
-                                "All CNC G-code (.tap, .nc, .txt, .bin), 3D STL meshes, ArtCAM relief files (.rlf), and AutoCAD drawings (.dxf) are parsed and rendered directly on your device using local GPU hardware acceleration. Your designs and proprietary machine files are never uploaded or transmitted to any external server.\n\n" +
+                                "All CNC G-code (.tap, .nc, .txt, .bin), 3D STL meshes, and AutoCAD drawings (.dxf) are parsed and rendered directly on your device using local GPU hardware acceleration. Your designs and proprietary machine files are never uploaded or transmitted to any external server.\n\n" +
                                 "2. Minimal System Permissions:\n" +
                                 "The app uses Android Storage Access Framework (SAF) only for opening files explicitly picked by you. No access to private contacts, microphone, camera, or device storage without permission.\n\n" +
                                 "3. Advertising & Google AdMob:\n" +

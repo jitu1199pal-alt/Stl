@@ -69,7 +69,6 @@ fun HomeScreen(
     onNavigateToStlViewer: () -> Unit,
     onNavigateToDxfViewer: () -> Unit,
     onNavigateToCadFolder: () -> Unit,
-    onNavigateToRlfViewer: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPrivacy: () -> Unit
@@ -105,21 +104,8 @@ fun HomeScreen(
             when {
                 lower.endsWith(".stl") -> onNavigateToStlViewer()
                 lower.endsWith(".dxf") || lower.endsWith(".dwg") -> onNavigateToDxfViewer()
-                lower.endsWith(".rlf") -> onNavigateToRlfViewer()
                 else -> onNavigateToProgramViewer()
             }
-        }
-    }
-
-    // Dedicated ArtCAM Relief (.rlf) File Picker: directly opens RLF 3D Relief Viewer upon selection
-    val rlfFilePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let {
-            val realName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "relief.rlf"
-            val safeName = if (realName.lowercase().endsWith(".rlf")) realName else "$realName.rlf"
-            viewModel.openUri(it, safeName)
-            onNavigateToRlfViewer()
         }
     }
 
@@ -222,7 +208,6 @@ fun HomeScreen(
                                         is ActiveModel.GCode -> (activeModel as ActiveModel.GCode).model.fileName
                                         is ActiveModel.STL -> (activeModel as ActiveModel.STL).model.fileName
                                         is ActiveModel.DXF -> (activeModel as ActiveModel.DXF).model.fileName
-                                        is ActiveModel.RLF -> (activeModel as ActiveModel.RLF).model.fileName
                                         else -> ""
                                     },
                                     fontSize = 15.sp,
@@ -236,7 +221,6 @@ fun HomeScreen(
                                         is ActiveModel.GCode -> onNavigateToProgramViewer()
                                         is ActiveModel.STL -> onNavigateToStlViewer()
                                         is ActiveModel.DXF -> onNavigateToDxfViewer()
-                                        is ActiveModel.RLF -> onNavigateToRlfViewer()
                                         else -> {}
                                     }
                                 },
@@ -288,14 +272,6 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "RLF File Viewer",
-                        subtitle = "ArtCAM Relief (.rlf)",
-                        icon = Icons.Default.ViewInAr,
-                        accentColor = Color(0xFFDA984B),
-                        modifier = Modifier.weight(1f),
-                        onClick = { rlfFilePicker.launch(arrayOf("*/*")) }
-                    )
-                    ActionTile(
                         title = "AutoCAD Viewer",
                         subtitle = "CAD Drawing (.dxf .dwg)",
                         icon = Icons.Default.Layers,
@@ -303,77 +279,14 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         onClick = { autocadFilePicker.launch(arrayOf("*/*")) }
                     )
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Prominent Dedicated ArtCAM 3D Relief Card (Direct File Selection for Vishnu / Lakshmi / Temple Carvings)
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { rlfFilePicker.launch(arrayOf("*/*")) },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF451A03)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFB45309)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.ViewInAr,
-                                contentDescription = "ArtCAM Relief 3D Viewer",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "ArtCAM 3D Relief",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xFFF59E0B), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = ".RLF 3D",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = "भगवान विष्णु, लक्ष्मी मां, मंदिर नक्काशी व 3D रिलीफ (.rlf) खोलें",
-                                fontSize = 11.sp,
-                                color = Color(0xFFFDE68A)
-                            )
-                        }
-                        Button(
-                            onClick = { rlfFilePicker.launch(arrayOf("*/*")) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Open RLF", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
+                    ActionTile(
+                        title = "CAD Folder",
+                        subtitle = "AutoCAD Blueprints",
+                        icon = Icons.Default.FolderOpen,
+                        accentColor = Color(0xFF059669),
+                        modifier = Modifier.weight(1f),
+                        onClick = onNavigateToCadFolder
+                    )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -588,16 +501,6 @@ fun HomeScreen(
                     ) {
                         Text("Flange (.dxf)", fontSize = 10.sp, color = Color(0xFF10B981))
                     }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.loadSampleRlf()
-                            onNavigateToRlfViewer()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Relief (.rlf)", fontSize = 10.sp, color = Color(0xFFDA984B))
-                    }
                 }
             }
 
@@ -652,7 +555,6 @@ fun HomeScreen(
                                 when (item.fileType) {
                                     "STL" -> onNavigateToStlViewer()
                                     "DXF" -> onNavigateToDxfViewer()
-                                    "RLF" -> onNavigateToRlfViewer()
                                     else -> onNavigateToProgramViewer()
                                 }
                             },
@@ -667,7 +569,7 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = when (item.fileType) {
-                                    "STL", "RLF" -> Icons.Default.ViewInAr
+                                    "STL" -> Icons.Default.ViewInAr
                                     "DXF" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },

@@ -7,8 +7,6 @@ import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
 import com.example.data.parser.DxfParser
 import com.example.data.parser.GCodeParser
-import com.example.data.parser.RlfModel
-import com.example.data.parser.RlfParser
 import com.example.data.parser.SampleDataGenerator
 import com.example.data.parser.StlModel
 import com.example.data.parser.StlParser
@@ -74,25 +72,6 @@ class FileRepository(private val context: Context) {
         model
     }
 
-    suspend fun parseRlfFromUri(uri: Uri, name: String): RlfModel = withContext(Dispatchers.IO) {
-        val inputStream = context.contentResolver.openInputStream(uri)
-            ?: throw java.io.IOException("Cannot open file stream for $name")
-        val model = inputStream.use { stream ->
-            RlfParser.parse(name, stream)
-        }
-
-        recentDao.insertRecentFile(
-            RecentFileEntity(
-                name = name,
-                uriString = uri.toString(),
-                fileType = "RLF",
-                sizeBytes = 0L,
-                lineOrFaceCount = model.stlModel.faceCount
-            )
-        )
-        model
-    }
-
     suspend fun loadSampleGCode(): ToolpathModel = withContext(Dispatchers.IO) {
         val sampleText = SampleDataGenerator.getSampleGCode()
         GCodeParser.parse("sample_3d_relief.tap", sampleText)
@@ -116,11 +95,6 @@ class FileRepository(private val context: Context) {
     suspend fun loadCncBracketDxf(): DxfModel = withContext(Dispatchers.IO) {
         val sampleText = SampleDataGenerator.getSampleCncBracketDxf()
         DxfParser.parse("cnc_bracket_plate.dxf", sampleText)
-    }
-
-    suspend fun loadSampleRlf(): RlfModel = withContext(Dispatchers.IO) {
-        val stream = SampleDataGenerator.getSampleRlfInputStream()
-        RlfParser.parse("artcam_3d_ornament.rlf", stream)
     }
 
     suspend fun deleteRecentFile(id: Long) = recentDao.deleteRecentFile(id)
