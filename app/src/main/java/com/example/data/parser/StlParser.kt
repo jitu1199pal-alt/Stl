@@ -20,12 +20,51 @@ data class StlModel(
     val bounds: BoundingBox3D,
     val faceCount: Int,
     val surfaceAreaMm2: Float,
-    val volumeMm3: Float
-)
+    val volumeMm3: Float,
+    val vertexBuffer: java.nio.FloatBuffer? = null,
+    val normalBuffer: java.nio.FloatBuffer? = null
+) {
+    fun getOrBuildVertexBuffer(): java.nio.FloatBuffer {
+        val existing = vertexBuffer
+        if (existing != null) {
+            existing.position(0)
+            return existing
+        }
+        val count = triangles.size
+        val buf = ByteBuffer.allocateDirect(count * 3 * 3 * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        for (tri in triangles) {
+            buf.put(tri.v1.x); buf.put(tri.v1.y); buf.put(tri.v1.z)
+            buf.put(tri.v2.x); buf.put(tri.v2.y); buf.put(tri.v2.z)
+            buf.put(tri.v3.x); buf.put(tri.v3.y); buf.put(tri.v3.z)
+        }
+        buf.position(0)
+        return buf
+    }
+
+    fun getOrBuildNormalBuffer(): java.nio.FloatBuffer {
+        val existing = normalBuffer
+        if (existing != null) {
+            existing.position(0)
+            return existing
+        }
+        val count = triangles.size
+        val buf = ByteBuffer.allocateDirect(count * 3 * 3 * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        for (tri in triangles) {
+            val n = tri.normal
+            for (k in 0 until 3) {
+                buf.put(n.x); buf.put(n.y); buf.put(n.z)
+            }
+        }
+        buf.position(0)
+        return buf
+    }
+}
 
 object StlParser {
-
-    private const val MAX_DISPLAY_TRIANGLES = 40_000
 
     fun parse(fileName: String, inputStream: InputStream): StlModel {
         val bufferedStream = BufferedInputStream(inputStream, 262144)
@@ -65,15 +104,26 @@ object StlParser {
         val countBuffer = ByteBuffer.wrap(countBytes).order(ByteOrder.LITTLE_ENDIAN)
         val numTriangles = countBuffer.int.coerceAtLeast(0)
 
-        // Uniform stride to guarantee continuous, gapless surface coverage
-        val stride = if (numTriangles > MAX_DISPLAY_TRIANGLES) {
-            ceil(numTriangles.toDouble() / MAX_DISPLAY_TRIANGLES).toInt().coerceAtLeast(1)
-        } else {
-            1
+        if (numTriangles == 0) {
+            return StlModel(
+                fileName = fileName,
+                triangles = emptyList(),
+                bounds = BoundingBox3D(0f, 10f, 0f, 10f, 0f, 10f),
+                faceCount = 0,
+                surfaceAreaMm2 = 0f,
+                volumeMm3 = 0f
+            )
         }
 
-        val estimatedDisplayCount = (numTriangles / stride) + 100
-        val triangles = ArrayList<Triangle3D>(estimatedDisplayCount.coerceAtMost(MAX_DISPLAY_TRIANGLES + 500))
+        // Direct native buffers for OpenGL ES rendering - ZERO heap overhead, holds 100% of all triangles!
+        val vBuf = ByteBuffer.allocateDirect(numTriangles * 3 * 3 * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        val nBuf = ByteBuffer.allocateDirect(numTriangles * 3 * 3 * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+
+        val trianglesList = ArrayList<Triangle3D>(if (numTriangles <= 60_000) numTriangles else 0)
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -82,77 +132,125 @@ object StlParser {
         var totalArea = 0f
         var totalVolume = 0f
 
-        val recordBuffer = ByteArray(50)
-        val byteBuf = ByteBuffer.wrap(recordBuffer).order(ByteOrder.LITTLE_ENDIAN)
+        // Fast block reading (500 triangles = 25,000 bytes per chunk)
+        val chunkSize = 500
+        val recordSize = 50
+        val blockBytes = ByteArray(chunkSize * recordSize)
+        val byteBuf = ByteBuffer.wrap(blockBytes).order(ByteOrder.LITTLE_ENDIAN)
 
-        for (i in 0 until numTriangles) {
-            var readTotal = 0
-            while (readTotal < 50) {
-                val r = inputStream.read(recordBuffer, readTotal, 50 - readTotal)
+        var trianglesRead = 0
+        while (trianglesRead < numTriangles) {
+            val toRead = minOf(chunkSize, numTriangles - trianglesRead)
+            val bytesNeeded = toRead * recordSize
+            var bytesRead = 0
+            while (bytesRead < bytesNeeded) {
+                val r = inputStream.read(blockBytes, bytesRead, bytesNeeded - bytesRead)
                 if (r < 0) break
-                readTotal += r
+                bytesRead += r
             }
-            if (readTotal < 50) break
+            val recordsInThisBlock = bytesRead / recordSize
+            if (recordsInThisBlock == 0) break
 
-            byteBuf.rewind()
-            val nx = byteBuf.float; val ny = byteBuf.float; val nz = byteBuf.float
-            val v1x = byteBuf.float; val v1y = byteBuf.float; val v1z = byteBuf.float
-            val v2x = byteBuf.float; val v2y = byteBuf.float; val v2z = byteBuf.float
-            val v3x = byteBuf.float; val v3y = byteBuf.float; val v3z = byteBuf.float
+            byteBuf.position(0)
+            for (idx in 0 until recordsInThisBlock) {
+                val nx = byteBuf.float
+                val ny = byteBuf.float
+                val nz = byteBuf.float
+                val v1x = byteBuf.float
+                val v1y = byteBuf.float
+                val v1z = byteBuf.float
+                val v2x = byteBuf.float
+                val v2y = byteBuf.float
+                val v2z = byteBuf.float
+                val v3x = byteBuf.float
+                val v3y = byteBuf.float
+                val v3z = byteBuf.float
+                byteBuf.short // attribute byte count
 
-            minX = minOf(minX, v1x, v2x, v3x); maxX = maxOf(maxX, v1x, v2x, v3x)
-            minY = minOf(minY, v1y, v2y, v3y); maxY = maxOf(maxY, v1y, v2y, v3y)
-            minZ = minOf(minZ, v1z, v2z, v3z); maxZ = maxOf(maxZ, v1z, v2z, v3z)
+                minX = minOf(minX, v1x, v2x, v3x); maxX = maxOf(maxX, v1x, v2x, v3x)
+                minY = minOf(minY, v1y, v2y, v3y); maxY = maxOf(maxY, v1y, v2y, v3y)
+                minZ = minOf(minZ, v1z, v2z, v3z); maxZ = maxOf(maxZ, v1z, v2z, v3z)
 
-            // Area & Volume
-            val crossX = (v2y - v1y) * (v3z - v1z) - (v2z - v1z) * (v3y - v1y)
-            val crossY = (v2z - v1z) * (v3x - v1x) - (v2x - v1x) * (v3z - v1z)
-            val crossZ = (v2x - v1x) * (v3y - v1y) - (v2y - v1y) * (v3x - v1x)
-            val crossLen = sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
-            totalArea += crossLen * 0.5f
+                // Cross product for normal & area
+                val crossX = (v2y - v1y) * (v3z - v1z) - (v2z - v1z) * (v3y - v1y)
+                val crossY = (v2z - v1z) * (v3x - v1x) - (v2x - v1x) * (v3z - v1z)
+                val crossZ = (v2x - v1x) * (v3y - v1y) - (v2y - v1y) * (v3x - v1x)
+                val crossLen = sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
+                totalArea += crossLen * 0.5f
 
-            val v = (v1x * (v2y * v3z - v3y * v2z) +
-                    v2x * (v3y * v1z - v1y * v3z) +
-                    v3x * (v1y * v2z - v2y * v1z)) / 6f
-            totalVolume += v
+                val v = (v1x * (v2y * v3z - v3y * v2z) +
+                        v2x * (v3y * v1z - v1y * v3z) +
+                        v3x * (v1y * v2z - v2y * v1z)) / 6f
+                totalVolume += v
 
-            // Add to display mesh according to uniform stride
-            if (stride == 1 || (i % stride == 0)) {
-                if (triangles.size < MAX_DISPLAY_TRIANGLES) {
-                    val v1 = Vector3D(v1x, v1y, v1z)
-                    val v2 = Vector3D(v2x, v2y, v2z)
-                    val v3 = Vector3D(v3x, v3y, v3z)
+                // Put 3 vertices into vertexBuffer
+                vBuf.put(v1x); vBuf.put(v1y); vBuf.put(v1z)
+                vBuf.put(v2x); vBuf.put(v2y); vBuf.put(v2z)
+                vBuf.put(v3x); vBuf.put(v3y); vBuf.put(v3z)
 
-                    val normal = if (nx == 0f && ny == 0f && nz == 0f) {
-                        if (crossLen > 0.00001f) {
-                            Vector3D(crossX / crossLen, crossY / crossLen, crossZ / crossLen)
-                        } else {
-                            Vector3D(0f, 0f, 1f)
-                        }
+                // Determine normal
+                val finalNx: Float
+                val finalNy: Float
+                val finalNz: Float
+                if (nx == 0f && ny == 0f && nz == 0f) {
+                    if (crossLen > 1e-6f) {
+                        finalNx = crossX / crossLen
+                        finalNy = crossY / crossLen
+                        finalNz = crossZ / crossLen
                     } else {
-                        Vector3D(nx, ny, nz).normalize()
+                        finalNx = 0f; finalNy = 0f; finalNz = 1f
                     }
+                } else {
+                    val nlen = sqrt(nx * nx + ny * ny + nz * nz)
+                    if (nlen > 1e-6f) {
+                        finalNx = nx / nlen; finalNy = ny / nlen; finalNz = nz / nlen
+                    } else {
+                        finalNx = 0f; finalNy = 0f; finalNz = 1f
+                    }
+                }
 
-                    triangles.add(Triangle3D(v1, v2, v3, normal))
+                // Put normal 3 times for the 3 vertices
+                for (k in 0 until 3) {
+                    nBuf.put(finalNx); nBuf.put(finalNy); nBuf.put(finalNz)
+                }
+
+                if (numTriangles <= 60_000) {
+                    trianglesList.add(
+                        Triangle3D(
+                            Vector3D(v1x, v1y, v1z),
+                            Vector3D(v2x, v2y, v2z),
+                            Vector3D(v3x, v3y, v3z),
+                            Vector3D(finalNx, finalNy, finalNz)
+                        )
+                    )
                 }
             }
+            trianglesRead += recordsInThisBlock
+            if (recordsInThisBlock < toRead) break
         }
+
+        vBuf.position(0)
+        nBuf.position(0)
 
         if (minX > maxX) { minX = 0f; maxX = 10f; minY = 0f; maxY = 10f; minZ = 0f; maxZ = 10f }
 
         return StlModel(
             fileName = fileName,
-            triangles = triangles,
+            triangles = trianglesList,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
-            faceCount = numTriangles,
+            faceCount = trianglesRead,
             surfaceAreaMm2 = totalArea,
-            volumeMm3 = abs(totalVolume)
+            volumeMm3 = abs(totalVolume),
+            vertexBuffer = vBuf,
+            normalBuffer = nBuf
         )
     }
 
     private fun parseAscii(fileName: String, inputStream: InputStream): StlModel {
         val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 262144)
-        val triangles = ArrayList<Triangle3D>(2048)
+        val verticesList = ArrayList<Float>(16384)
+        val normalsList = ArrayList<Float>(16384)
+        val trianglesList = ArrayList<Triangle3D>(2048)
 
         var minX = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
@@ -205,8 +303,22 @@ object StlParser {
                             v3.x * (v1.y * v2.z - v2.y * v1.z)) / 6f
                     totalVolume += v
 
-                    if (triangles.size < MAX_DISPLAY_TRIANGLES) {
-                        triangles.add(Triangle3D(v1, v2, v3, currentNormal))
+                    // Add to raw float buffers
+                    verticesList.add(v1.x); verticesList.add(v1.y); verticesList.add(v1.z)
+                    verticesList.add(v2.x); verticesList.add(v2.y); verticesList.add(v2.z)
+                    verticesList.add(v3.x); verticesList.add(v3.y); verticesList.add(v3.z)
+
+                    val normToUse = if (currentNormal.length() > 0.001f) currentNormal else {
+                        if (crossLen > 1e-6f) Vector3D(crossX / crossLen, crossY / crossLen, crossZ / crossLen)
+                        else Vector3D(0f, 0f, 1f)
+                    }
+
+                    for (k in 0 until 3) {
+                        normalsList.add(normToUse.x); normalsList.add(normToUse.y); normalsList.add(normToUse.z)
+                    }
+
+                    if (totalFaces <= 60_000) {
+                        trianglesList.add(Triangle3D(v1, v2, v3, normToUse))
                     }
                 }
             }
@@ -215,13 +327,27 @@ object StlParser {
 
         if (minX > maxX) { minX = 0f; maxX = 10f; minY = 0f; maxY = 10f; minZ = 0f; maxZ = 10f }
 
+        val vBuf = ByteBuffer.allocateDirect(verticesList.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        for (f in verticesList) vBuf.put(f)
+        vBuf.position(0)
+
+        val nBuf = ByteBuffer.allocateDirect(normalsList.size * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        for (f in normalsList) nBuf.put(f)
+        nBuf.position(0)
+
         return StlModel(
             fileName = fileName,
-            triangles = triangles,
+            triangles = trianglesList,
             bounds = BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ),
             faceCount = totalFaces,
             surfaceAreaMm2 = totalArea,
-            volumeMm3 = abs(totalVolume)
+            volumeMm3 = abs(totalVolume),
+            vertexBuffer = vBuf,
+            normalBuffer = nBuf
         )
     }
 }

@@ -155,7 +155,7 @@ fun StlViewerScreen(
                             CadQuickActionButton("Sample Model") { viewModel.loadSampleStl() }
                             Spacer(modifier = Modifier.weight(1f))
                             Text(
-                                text = "Size: ${stlModel.triangles.size} rendering faces",
+                                text = "Faces: ${stlModel.faceCount}",
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8)
                             )
