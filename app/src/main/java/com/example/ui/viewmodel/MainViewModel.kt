@@ -209,7 +209,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         isFlippedY: Boolean? = null,
         isFlippedX: Boolean? = null,
         isTransposed: Boolean? = null,
-        showBaseBlock: Boolean? = null
+        showBaseBlock: Boolean? = null,
+        strideDelta: Int? = null,
+        isSigned16: Boolean? = null,
+        cropToRelief: Boolean? = null
     ) {
         val current = (_activeModel.value as? ActiveModel.RLF)?.model ?: return
         viewModelScope.launch {
@@ -221,7 +224,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 flipX = isFlippedX ?: flipX ?: current.flipX,
                 transpose = isTransposed ?: transpose ?: current.transpose,
                 gridResolution = gridResolution ?: current.gridResolution,
-                showBaseBlock = showBaseBlock ?: current.showBaseBlock
+                showBaseBlock = showBaseBlock ?: current.showBaseBlock,
+                strideDelta = strideDelta ?: current.customStrideDelta,
+                isSigned16 = isSigned16 ?: current.isSigned16,
+                cropToRelief = cropToRelief ?: current.cropToRelief
             )
             _activeModel.value = ActiveModel.RLF(updated)
         }

@@ -75,9 +75,11 @@ class FileRepository(private val context: Context) {
     }
 
     suspend fun parseRlfFromUri(uri: Uri, name: String): RlfModel = withContext(Dispatchers.IO) {
-        val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            RlfParser.parse(name, inputStream)
-        } ?: RlfParser.parse(name, SampleDataGenerator.getSampleRlfInputStream())
+        val inputStream = context.contentResolver.openInputStream(uri)
+            ?: throw java.io.IOException("Cannot open file stream for $name")
+        val model = inputStream.use { stream ->
+            RlfParser.parse(name, stream)
+        }
 
         recentDao.insertRecentFile(
             RecentFileEntity(

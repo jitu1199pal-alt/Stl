@@ -135,9 +135,49 @@ fun RlfViewerScreen(
                 ) {
                     when (activeTab) {
                         "Tuning" -> {
+                            // Quick Deity Relief Preset
+                            RlfToggleChip(
+                                label = "✨ विष्णु/लक्ष्मी 3D नक्काशी",
+                                isActive = (rlfModel.cropToRelief && rlfModel.isSigned16)
+                            ) {
+                                viewModel.updateRlfSettings(
+                                    cropToRelief = true,
+                                    isSigned16 = true,
+                                    depthScale = 1.5f,
+                                    isInverted = false,
+                                    isFlippedY = false,
+                                    showBaseBlock = true
+                                )
+                                selectedColor = Color(0xFFFFD700) // Polished Brass
+                                cameraState.setTopView()
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Crop / Focus on Deity Carving vs Full Sheet Canvas
+                            RlfToggleChip(
+                                label = if (rlfModel.cropToRelief) "🎯 मूर्ति फोकस (Deity Zoom)" else "📐 पूरा कैनवास (Full Canvas)",
+                                isActive = rlfModel.cropToRelief
+                            ) {
+                                viewModel.updateRlfSettings(cropToRelief = !rlfModel.cropToRelief)
+                                cameraState.setTopView()
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Signed vs Unsigned 16-bit
+                            RlfToggleChip(
+                                label = if (rlfModel.isSigned16) "16-Bit Signed (ArtCAM)" else "16-Bit Unsigned",
+                                isActive = rlfModel.isSigned16
+                            ) {
+                                viewModel.updateRlfSettings(isSigned16 = !rlfModel.isSigned16)
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
                             // Depth Scale Chips
                             Text("Depth:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
-                            listOf(0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f).forEach { scale ->
+                            listOf(0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 5.0f).forEach { scale ->
                                 val isSelected = (rlfModel.depthScale - scale) in -0.05f..0.05f
                                 RlfToggleChip(
                                     label = "${scale}x",
@@ -149,9 +189,31 @@ fun RlfViewerScreen(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
+                            // Width Stride Fine-Tuner (for manual adjustment if file stride slightly differs)
+                            Text("Width (${rlfModel.gridWidth}px):", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
+                            RlfQuickActionButton("-10") {
+                                viewModel.updateRlfSettings(strideDelta = rlfModel.customStrideDelta - 10)
+                            }
+                            RlfQuickActionButton("-1") {
+                                viewModel.updateRlfSettings(strideDelta = rlfModel.customStrideDelta - 1)
+                            }
+                            RlfQuickActionButton("+1") {
+                                viewModel.updateRlfSettings(strideDelta = rlfModel.customStrideDelta + 1)
+                            }
+                            RlfQuickActionButton("+10") {
+                                viewModel.updateRlfSettings(strideDelta = rlfModel.customStrideDelta + 10)
+                            }
+                            if (rlfModel.customStrideDelta != 0) {
+                                RlfQuickActionButton("Reset W") {
+                                    viewModel.updateRlfSettings(strideDelta = 0)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
                             // Invert Z (Emboss vs Engrave)
                             RlfToggleChip(
-                                label = if (rlfModel.isInverted) "Engraved (Recessed)" else "Embossed (Raised)",
+                                label = if (rlfModel.isInverted) "Engraved (धंसा हुआ)" else "Embossed (उभरा हुआ)",
                                 isActive = rlfModel.isInverted
                             ) {
                                 viewModel.updateRlfSettings(isInverted = !rlfModel.isInverted)
@@ -159,7 +221,7 @@ fun RlfViewerScreen(
 
                             // Flip Y (CNC Orientation)
                             RlfToggleChip(
-                                label = if (rlfModel.isFlippedY) "Y-Flipped (CNC Rev)" else "Y-Normal",
+                                label = if (rlfModel.isFlippedY) "Y-Flipped" else "Y-Normal",
                                 isActive = rlfModel.isFlippedY
                             ) {
                                 viewModel.updateRlfSettings(isFlippedY = !rlfModel.isFlippedY)
@@ -183,7 +245,7 @@ fun RlfViewerScreen(
 
                             // Workpiece Base Block
                             RlfToggleChip(
-                                label = if (rlfModel.showBaseBlock) "Solid Stock Block" else "Surface Only",
+                                label = if (rlfModel.showBaseBlock) "Stock Block (Solid Base)" else "Sculpted Surface Only",
                                 isActive = rlfModel.showBaseBlock
                             ) {
                                 viewModel.updateRlfSettings(showBaseBlock = !rlfModel.showBaseBlock)

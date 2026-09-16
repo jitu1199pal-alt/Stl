@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -77,12 +78,28 @@ fun HomeScreen(
     val recentFiles by viewModel.recentFiles.collectAsState()
     val activeModel by viewModel.activeModel.collectAsState()
 
+    // Helper to extract real display filename from Android Content Uri
+    fun queryDisplayName(uri: Uri): String? {
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx != -1) {
+                        val name = cursor.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
     // SAF Document Picker (opens full System File Manager with side drawer for all folders)
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "imported_file"
+            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "imported_file"
             viewModel.openUri(it, fileName)
             val lower = fileName.lowercase()
             when {
@@ -94,12 +111,24 @@ fun HomeScreen(
         }
     }
 
+    // Dedicated ArtCAM Relief (.rlf) File Picker: directly opens RLF 3D Relief Viewer upon selection
+    val rlfFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val realName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "relief.rlf"
+            val safeName = if (realName.lowercase().endsWith(".rlf")) realName else "$realName.rlf"
+            viewModel.openUri(it, safeName)
+            onNavigateToRlfViewer()
+        }
+    }
+
     // Dedicated AutoCAD File Picker: directly opens AutoCAD Drawing Viewer upon selection
     val autocadFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dxf"
+            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dxf"
             viewModel.openUri(it, fileName)
             onNavigateToDxfViewer()
         }
@@ -264,7 +293,7 @@ fun HomeScreen(
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFDA984B),
                         modifier = Modifier.weight(1f),
-                        onClick = { filePicker.launch(arrayOf("*/*")) }
+                        onClick = { rlfFilePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
                         title = "AutoCAD Viewer",
@@ -276,6 +305,77 @@ fun HomeScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // Prominent Dedicated ArtCAM 3D Relief Card (Direct File Selection for Vishnu / Lakshmi / Temple Carvings)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { rlfFilePicker.launch(arrayOf("*/*")) },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF451A03)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFB45309)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.ViewInAr,
+                                contentDescription = "ArtCAM Relief 3D Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "ArtCAM 3D Relief",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFF59E0B), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = ".RLF 3D",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "भगवान विष्णु, लक्ष्मी मां, मंदिर नक्काशी व 3D रिलीफ (.rlf) खोलें",
+                                fontSize = 11.sp,
+                                color = Color(0xFFFDE68A)
+                            )
+                        }
+                        Button(
+                            onClick = { rlfFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open RLF", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Prominent Dedicated AutoCAD Viewer Option (Direct File Selection)
                 Card(
