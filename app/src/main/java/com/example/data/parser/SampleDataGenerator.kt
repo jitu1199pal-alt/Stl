@@ -7,6 +7,7 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.sqrt
 
 object SampleDataGenerator {
 
@@ -543,16 +544,16 @@ EOF
     }
 
     fun getSampleRlfInputStream(): InputStream {
-        // Generates an authentic 3D Carved Box Relief (Workpiece block with raised rectangular border, flat recessed plateau, and carved crest)
-        val gridW = 90
-        val gridH = 90
+        // Generates an authentic ArtCAM 3D Floral Medallion Relief Panel
+        val gridW = 120
+        val gridH = 120
         val header = ByteArray(64)
         val buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(0x524C4620) // Magic 'RLF '
         buf.putInt(gridW) // explicit Int gridWidth
         buf.putInt(gridH) // explicit Int gridHeight
-        buf.putFloat(150f) // physical sizeX in mm
-        buf.putFloat(150f) // physical sizeY in mm
+        buf.putFloat(160f) // physical sizeX in mm
+        buf.putFloat(160f) // physical sizeY in mm
 
         val payloadSize = gridW * gridH * 4
         val dataBytes = ByteArray(64 + payloadSize)
@@ -560,29 +561,43 @@ EOF
 
         val dataBuf = ByteBuffer.wrap(dataBytes, 64, payloadSize).order(ByteOrder.LITTLE_ENDIAN)
 
-        for (x in 0 until gridW) {
-            for (y in 0 until gridH) {
-                // Construct a 3D Box Relief:
-                // Border margin: 0 to 6 and 84 to 90
+        val centerX = (gridW - 1) / 2.0
+        val centerY = (gridH - 1) / 2.0
+        val maxRadius = gridW * 0.44
+
+        // Standard row-major order (y then x)
+        for (y in 0 until gridH) {
+            for (x in 0 until gridW) {
                 val edgeDistX = minOf(x, gridW - 1 - x)
                 val edgeDistY = minOf(y, gridH - 1 - y)
                 val minEdge = minOf(edgeDistX, edgeDistY)
 
-                val zVal = when {
-                    minEdge < 4 -> 0f // Base workpiece stock
-                    minEdge in 4..10 -> (minEdge - 4) * 2f // Beveled outer slope of box rim
-                    minEdge in 11..16 -> 12f // Raised box top rim
-                    minEdge in 17..20 -> 12f - (minEdge - 16) * 1.5f // Step drop into box cavity
+                val dx = x - centerX
+                val dy = y - centerY
+                val r = sqrt((dx * dx + dy * dy).toDouble())
+                val angle = kotlin.math.atan2(dy.toDouble(), dx.toDouble())
+
+                val zVal: Float = when {
+                    // Outer border frame
+                    minEdge < 3 -> 0.5f
+                    minEdge in 3..7 -> 0.5f + (minEdge - 3) * 2.5f
+                    minEdge in 8..11 -> 11.5f - (minEdge - 8) * 1.5f
+                    // Floral Medallion
+                    r <= maxRadius -> {
+                        val normR = (r / maxRadius).toFloat()
+                        // 8-petal fluted floral carving
+                        val petalModulation = kotlin.math.cos(angle * 8.0).toFloat() * 1.8f
+                        val concentricRing = kotlin.math.sin(normR * Math.PI.toFloat() * 4f) * 1.2f
+                        val centralDome = if (r < maxRadius * 0.35) {
+                            val innerR = (r / (maxRadius * 0.35)).toFloat()
+                            kotlin.math.cos(innerR * Math.PI.toFloat() * 0.5f) * 4.5f
+                        } else 0f
+
+                        (6.0f + (1f - normR) * 5.0f + petalModulation * (1f - normR * 0.5f) + concentricRing + centralDome).coerceAtLeast(1.0f)
+                    }
                     else -> {
-                        // Center plateau with raised rectangular emblem
-                        val cx = abs(x - 45)
-                        val cy = abs(y - 45)
-                        val boxDist = max(cx, cy)
-                        if (boxDist < 12) {
-                            8f + (12 - boxDist) * 0.4f + cos(cx * 0.4f) * 0.8f
-                        } else {
-                            6.0f // Flat box floor
-                        }
+                        // Flat panel background recess
+                        3.5f + kotlin.math.sin(x * 0.2) .toFloat() * 0.2f
                     }
                 }
                 dataBuf.putFloat(zVal)

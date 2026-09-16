@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,13 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Height
-import androidx.compose.material.icons.filled.InvertColors
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,16 +58,17 @@ fun RlfViewerScreen(
 
     val cameraState = remember { CameraState() }
     var selectedColor by remember { mutableStateOf(Color(0xFFDA984B)) } // Warm Wood Bronze Relief finish
-    var activeTab by remember { mutableStateOf("View") }
+    var activeTab by remember { mutableStateOf("Tuning") }
 
-    val colors = listOf(
-        Color(0xFFDA984B), // Wood Gold / Teak
-        Color(0xFF8D6E63), // Dark Walnut Wood
-        Color(0xFFD37554), // Copper Clay
-        Color(0xFFE2E8F0), // CNC Aluminum Steel
-        Color(0xFFFFD700), // Polished Brass
-        Color(0xFF00E5FF), // Cyan CAD
-        Color(0xFF10B981)  // Jade
+    val materials = listOf(
+        Pair("Teak Wood", Color(0xFFDA984B)),
+        Pair("Walnut Wood", Color(0xFF8D6E63)),
+        Pair("Polished Brass", Color(0xFFFFD700)),
+        Pair("Antique Bronze", Color(0xFFB87333)),
+        Pair("Aluminum", Color(0xFFE2E8F0)),
+        Pair("CAD Cyan", Color(0xFF00E5FF)),
+        Pair("Jade", Color(0xFF10B981)),
+        Pair("Slate Grey", Color(0xFF64748B))
     )
 
     Scaffold(
@@ -83,7 +83,7 @@ fun RlfViewerScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "3D Solid CNC Box & Carving Relief Surface",
+                            text = rlfModel?.formatDescription ?: "3D Relief Carving Surface",
                             fontSize = 11.sp,
                             color = Color(0xFFDA984B)
                         )
@@ -117,29 +117,97 @@ fun RlfViewerScreen(
                         .padding(horizontal = 4.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    RlfMenuTabButton("View", activeTab == "View") { activeTab = "View" }
-                    RlfMenuTabButton("Style", activeTab == "Style") { activeTab = "Style" }
-                    RlfMenuTabButton("Relief Box", activeTab == "Relief Box") { activeTab = "Relief Box" }
+                    RlfMenuTabButton("Relief Tuning", activeTab == "Tuning") { activeTab = "Tuning" }
+                    RlfMenuTabButton("View Angles", activeTab == "View") { activeTab = "View" }
+                    RlfMenuTabButton("Style & Colors", activeTab == "Style") { activeTab = "Style" }
                     RlfMenuTabButton("Specs", activeTab == "Specs") { activeTab = "Specs" }
                 }
 
-                // Active Tab Bar Actions
+                // Active Tab Bar Actions (Horizontally Scrollable)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color(0xFF1E293B))
+                        .horizontalScroll(rememberScrollState())
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     when (activeTab) {
+                        "Tuning" -> {
+                            // Depth Scale Chips
+                            Text("Depth:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
+                            listOf(0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f).forEach { scale ->
+                                val isSelected = (rlfModel.depthScale - scale) in -0.05f..0.05f
+                                RlfToggleChip(
+                                    label = "${scale}x",
+                                    isActive = isSelected
+                                ) {
+                                    viewModel.updateRlfSettings(depthScale = scale)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Invert Z (Emboss vs Engrave)
+                            RlfToggleChip(
+                                label = if (rlfModel.isInverted) "Engraved (Recessed)" else "Embossed (Raised)",
+                                isActive = rlfModel.isInverted
+                            ) {
+                                viewModel.updateRlfSettings(isInverted = !rlfModel.isInverted)
+                            }
+
+                            // Flip Y (CNC Orientation)
+                            RlfToggleChip(
+                                label = if (rlfModel.isFlippedY) "Y-Flipped (CNC Rev)" else "Y-Normal",
+                                isActive = rlfModel.isFlippedY
+                            ) {
+                                viewModel.updateRlfSettings(isFlippedY = !rlfModel.isFlippedY)
+                            }
+
+                            // Mirror X
+                            RlfToggleChip(
+                                label = if (rlfModel.isFlippedX) "X-Mirrored" else "X-Normal",
+                                isActive = rlfModel.isFlippedX
+                            ) {
+                                viewModel.updateRlfSettings(isFlippedX = !rlfModel.isFlippedX)
+                            }
+
+                            // Transpose (Swap XY)
+                            RlfToggleChip(
+                                label = if (rlfModel.isTransposed) "XY Swapped" else "XY Normal",
+                                isActive = rlfModel.isTransposed
+                            ) {
+                                viewModel.updateRlfSettings(isTransposed = !rlfModel.isTransposed)
+                            }
+
+                            // Workpiece Base Block
+                            RlfToggleChip(
+                                label = if (rlfModel.showBaseBlock) "Solid Stock Block" else "Surface Only",
+                                isActive = rlfModel.showBaseBlock
+                            ) {
+                                viewModel.updateRlfSettings(showBaseBlock = !rlfModel.showBaseBlock)
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Quality:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF94A3B8))
+                            listOf(150 to "Standard", 220 to "High", 320 to "Ultra").forEach { (res, name) ->
+                                val isSelected = rlfModel.gridResolution == res
+                                RlfToggleChip(
+                                    label = name,
+                                    isActive = isSelected
+                                ) {
+                                    viewModel.updateRlfSettings(gridResolution = res)
+                                }
+                            }
+                        }
                         "View" -> {
                             RlfQuickActionButton("Iso NE") { cameraState.setIsometricNE() }
                             RlfQuickActionButton("Iso SE") { cameraState.setIsometricSE() }
                             RlfQuickActionButton("Top (XY)") { cameraState.setTopView() }
                             RlfQuickActionButton("Front (XZ)") { cameraState.setFrontView() }
                             RlfQuickActionButton("Right (YZ)") { cameraState.setRightView() }
-                            RlfQuickActionButton("Reset") { cameraState.reset() }
+                            RlfQuickActionButton("Reset Fit") { cameraState.reset() }
                         }
                         "Style" -> {
                             StlRenderModeChip("Solid Shaded", StlRenderMode.SOLID, renderMode) { viewModel.setStlRenderMode(it) }
@@ -147,20 +215,11 @@ fun RlfViewerScreen(
                             StlRenderModeChip("Ghost", StlRenderMode.TRANSPARENT, renderMode) { viewModel.setStlRenderMode(it) }
                             StlRenderModeChip("Box Bounds", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
                         }
-                        "Relief Box" -> {
-                            RlfQuickActionButton("Box Sample") { viewModel.loadSampleRlf() }
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "Solid Workpiece Skirt Enabled",
-                                fontSize = 11.sp,
-                                color = Color(0xFF10B981),
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                         "Specs" -> {
                             TelemetryBadge(label = "Length X", value = "%.1f".format(rlfModel.widthMm), unit = "mm", accentColor = Color(0xFFEF4444))
                             TelemetryBadge(label = "Width Y", value = "%.1f".format(rlfModel.heightMm), unit = "mm", accentColor = Color(0xFF10B981))
-                            TelemetryBadge(label = "Height Z", value = "%.1f".format(rlfModel.maxReliefHeightMm), unit = "mm", accentColor = Color(0xFF3B82F6))
+                            TelemetryBadge(label = "Relief Z", value = "%.1f".format(rlfModel.maxReliefHeightMm), unit = "mm", accentColor = Color(0xFF3B82F6))
+                            TelemetryBadge(label = "Grid", value = "${rlfModel.gridWidth}x${rlfModel.gridHeight}", unit = "pts", accentColor = Color(0xFFDA984B))
                         }
                     }
                 }
@@ -180,19 +239,20 @@ fun RlfViewerScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Color Palette Chooser (Floating Top Right)
+                    // Material Color Palette Chooser (Floating Top Right)
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(10.dp)
                             .background(Color(0xB3000000), shape = RoundedCornerShape(20.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        colors.forEach { col ->
+                        materials.forEach { (_, col) ->
                             Box(
                                 modifier = Modifier
-                                    .size(24.dp)
+                                    .size(22.dp)
                                     .clip(CircleShape)
                                     .background(col)
                                     .clickable { selectedColor = col }
@@ -233,7 +293,7 @@ fun RlfViewerScreen(
                             color = Color.White
                         )
                         Text(
-                            text = "Solid 3D Workpiece • ${rlfModel.gridWidth}x${rlfModel.gridHeight} Height Grid • ${rlfModel.stlModel.faceCount} Polygons",
+                            text = "${rlfModel.formatDescription} • ${rlfModel.gridWidth}x${rlfModel.gridHeight} • ${rlfModel.stlModel.faceCount} Polygons",
                             fontSize = 10.sp,
                             color = Color(0xFF94A3B8)
                         )
@@ -319,6 +379,29 @@ fun RlfQuickActionButton(
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White
+        )
+    }
+}
+
+@Composable
+fun RlfToggleChip(
+    label: String,
+    isActive: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (isActive) Color(0xFF0284C7) else Color(0xFF334155))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            color = if (isActive) Color.White else Color(0xFFCBD5E1)
         )
     }
 }

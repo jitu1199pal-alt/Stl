@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
 import com.example.data.parser.RlfModel
+import com.example.data.parser.RlfParser
 import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
 import com.example.data.repository.FileRepository
@@ -194,6 +195,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    fun updateRlfSettings(
+        depthScale: Float? = null,
+        invertZ: Boolean? = null,
+        flipY: Boolean? = null,
+        flipX: Boolean? = null,
+        transpose: Boolean? = null,
+        gridResolution: Int? = null,
+        isInverted: Boolean? = null,
+        isFlippedY: Boolean? = null,
+        isFlippedX: Boolean? = null,
+        isTransposed: Boolean? = null,
+        showBaseBlock: Boolean? = null
+    ) {
+        val current = (_activeModel.value as? ActiveModel.RLF)?.model ?: return
+        viewModelScope.launch {
+            val updated = RlfParser.rebuildModel(
+                model = current,
+                depthScale = depthScale ?: current.depthScale,
+                invertZ = isInverted ?: invertZ ?: current.invertZ,
+                flipY = isFlippedY ?: flipY ?: current.flipY,
+                flipX = isFlippedX ?: flipX ?: current.flipX,
+                transpose = isTransposed ?: transpose ?: current.transpose,
+                gridResolution = gridResolution ?: current.gridResolution,
+                showBaseBlock = showBaseBlock ?: current.showBaseBlock
+            )
+            _activeModel.value = ActiveModel.RLF(updated)
         }
     }
 
