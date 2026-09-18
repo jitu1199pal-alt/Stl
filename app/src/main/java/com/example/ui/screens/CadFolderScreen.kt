@@ -61,14 +61,30 @@ fun CadFolderScreen(
     onBack: () -> Unit,
     onNavigateToDxfViewer: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val recentFiles by viewModel.recentFiles.collectAsState()
-    val cadRecent = recentFiles.filter { it.fileType == "DXF" || it.name.endsWith(".dxf", ignoreCase = true) || it.name.endsWith(".dwg", ignoreCase = true) }
+    val cadRecent = recentFiles.filter { it.fileType == "DXF" || it.fileType == "DWG" || it.name.endsWith(".dxf", ignoreCase = true) || it.name.endsWith(".dwg", ignoreCase = true) }
+
+    fun queryDisplayName(uri: android.net.Uri): String? {
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx != -1) {
+                        val name = cursor.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
 
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = it.lastPathSegment?.substringAfterLast('/') ?: "autocad_drawing.dxf"
+            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "autocad_drawing.dxf"
             viewModel.openUri(it, fileName)
             onNavigateToDxfViewer()
         }
@@ -148,7 +164,7 @@ fun CadFolderScreen(
                                 color = Color.White
                             )
                             Text(
-                                text = "Load any .dxf or AutoCAD drawing from phone folders or SD card",
+                                text = "Load any .dxf or .dwg AutoCAD drawing from phone folders or SD card",
                                 fontSize = 11.sp,
                                 color = Color(0xFFA7F3D0)
                             )

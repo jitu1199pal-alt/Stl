@@ -97,17 +97,37 @@ fun DxfViewerScreen(
         }
     }
 
+    val isDwgFile = dxfModel?.fileName?.endsWith(".dwg", ignoreCase = true) == true
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            text = dxfModel?.fileName ?: "AutoCAD DXF Viewer",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color.White
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = dxfModel?.fileName ?: "AutoCAD Viewer",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (isDwgFile) Color(0xFF00E5FF) else Color(0xFF10B981),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = if (isDwgFile) "DWG" else "DXF",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+                        }
                         if (dxfModel != null) {
                             Text(
                                 text = "Entities: ${dxfModel.entities.size} • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%",
@@ -197,6 +217,12 @@ fun DxfViewerScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TelemetryBadge(
+                                label = "FORMAT",
+                                value = if (isDwgFile) "DWG" else "DXF",
+                                unit = "CAD",
+                                accentColor = if (isDwgFile) Color(0xFF00E5FF) else Color(0xFF10B981)
+                            )
                             TelemetryBadge(
                                 label = "BOUNDS X",
                                 value = "%.1f".format(dxfModel.bounds.sizeX),

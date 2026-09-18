@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.example.data.db.AppDatabase
 import com.example.data.db.RecentFileEntity
+import com.example.data.parser.DwgParser
 import com.example.data.parser.DxfModel
 import com.example.data.parser.DxfParser
 import com.example.data.parser.GCodeParser
@@ -56,15 +57,25 @@ class FileRepository(private val context: Context) {
     }
 
     suspend fun parseDxfFromUri(uri: Uri, name: String): DxfModel = withContext(Dispatchers.IO) {
+        val lower = name.lowercase()
+        val isDwg = lower.endsWith(".dwg")
         val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            DxfParser.parseStream(name, inputStream)
-        } ?: DxfParser.parse(name, SampleDataGenerator.getSampleDxf())
+            if (isDwg) {
+                DwgParser.parseStream(name, inputStream)
+            } else {
+                DxfParser.parseStream(name, inputStream)
+            }
+        } ?: if (isDwg) {
+            DwgParser.parseStream(name, "".byteInputStream())
+        } else {
+            DxfParser.parse(name, SampleDataGenerator.getSampleDxf())
+        }
 
         recentDao.insertRecentFile(
             RecentFileEntity(
                 name = name,
                 uriString = uri.toString(),
-                fileType = "DXF",
+                fileType = if (isDwg) "DWG" else "DXF",
                 sizeBytes = 0L,
                 lineOrFaceCount = model.entities.size
             )
