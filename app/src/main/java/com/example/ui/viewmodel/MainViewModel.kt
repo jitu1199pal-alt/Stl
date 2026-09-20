@@ -6,6 +6,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
+import com.example.data.parser.ExcelModel
+import com.example.data.parser.PdfDocumentInfo
 import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
 import com.example.data.repository.FileRepository
@@ -26,6 +28,8 @@ sealed class ActiveModel {
     data class GCode(val model: ToolpathModel) : ActiveModel()
     data class STL(val model: StlModel) : ActiveModel()
     data class DXF(val model: DxfModel) : ActiveModel()
+    data class Excel(val model: ExcelModel) : ActiveModel()
+    data class Pdf(val info: PdfDocumentInfo) : ActiveModel()
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -90,6 +94,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _errorMessage.value = null
             try {
                 when {
+                    info.fileType == CadFileType.EXCEL -> {
+                        val excel = repository.parseExcelFromUri(info.uri, info.fileName)
+                        _activeModel.value = ActiveModel.Excel(excel)
+                        if (autoNavigate) {
+                            _pendingDestination.value = "excel_viewer"
+                        }
+                    }
+                    info.fileType == CadFileType.PDF -> {
+                        val pdf = repository.preparePdfFromUri(info.uri, info.fileName)
+                        _activeModel.value = ActiveModel.Pdf(pdf)
+                        if (autoNavigate) {
+                            _pendingDestination.value = "pdf_viewer"
+                        }
+                    }
                     info.fileType.is3DModel -> {
                         val stl = repository.parse3DModelFromUri(info.uri, info.fileName, info.fileType)
                         _activeModel.value = ActiveModel.STL(stl)
@@ -179,6 +197,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val dxf = repository.loadArchitecturalDxf()
                 _activeModel.value = ActiveModel.DXF(dxf)
                 _dxfVisibleLayers.value = dxf.layers.toSet()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun loadSampleExcel() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val excel = repository.loadSampleExcel()
+                _activeModel.value = ActiveModel.Excel(excel)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun loadSamplePdf() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val pdf = repository.loadSamplePdf()
+                _activeModel.value = ActiveModel.Pdf(pdf)
             } catch (e: Exception) {
                 _errorMessage.value = e.message
             } finally {

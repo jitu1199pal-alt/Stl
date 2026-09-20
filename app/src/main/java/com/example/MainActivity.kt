@@ -22,8 +22,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.ui.screens.CadFolderScreen
 import com.example.ui.screens.DxfViewerScreen
+import com.example.ui.screens.ExcelViewerScreen
 import com.example.ui.screens.HelpScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.PdfViewerScreen
 import com.example.ui.screens.PrivacyPolicyScreen
 import com.example.ui.screens.ProgramViewerScreen
 import com.example.ui.screens.SettingsScreen
@@ -73,6 +75,8 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToStlViewer = { navController.navigate("stl_viewer") },
                                 onNavigateToDxfViewer = { navController.navigate("dxf_viewer") },
                                 onNavigateToCadFolder = { navController.navigate("cad_folder") },
+                                onNavigateToExcelViewer = { navController.navigate("excel_viewer") },
+                                onNavigateToPdfViewer = { navController.navigate("pdf_viewer") },
                                 onNavigateToSettings = { navController.navigate("settings") },
                                 onNavigateToHelp = { navController.navigate("help") },
                                 onNavigateToPrivacy = { navController.navigate("privacy") }
@@ -99,6 +103,18 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("dxf_viewer") {
                             DxfViewerScreen(
+                                viewModel = viewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("excel_viewer") {
+                            ExcelViewerScreen(
+                                viewModel = viewModel,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("pdf_viewer") {
+                            PdfViewerScreen(
                                 viewModel = viewModel,
                                 onBack = { navController.popBackStack() }
                             )

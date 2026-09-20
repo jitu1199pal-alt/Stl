@@ -17,7 +17,9 @@ enum class CadFileType(val displayName: String, val badge: String) {
     ASPIRE_3D("Vectric Aspire 3D", "ASPIRE"),
     DXF("AutoCAD DXF Drawing", "DXF"),
     DWG("AutoCAD DWG Drawing", "DWG"),
-    TOOLPATH_GCODE("CNC Toolpath Program", "G-CODE");
+    TOOLPATH_GCODE("CNC Toolpath Program", "G-CODE"),
+    EXCEL("Excel Spreadsheet", "EXCEL"),
+    PDF("PDF Document", "PDF");
 
     val is3DModel: Boolean
         get() = this in listOf(STL, OBJ, RLF, ART, XML3D, ASPIRE_3D)
@@ -52,7 +54,7 @@ object FileTypeResolver {
     }
 
     /**
-     * Resolves display name and accurate CAD / 3D / Relief / Toolpath type for a given Content or File URI.
+     * Resolves display name and accurate CAD / 3D / Relief / Toolpath / Excel / PDF type for a given Content or File URI.
      */
     fun resolve(context: Context, uri: Uri, mimeType: String? = null): ResolvedFileInfo {
         var displayName = queryDisplayName(context, uri)
@@ -117,6 +119,11 @@ object FileTypeResolver {
         val lowerName = fileName.lowercase()
 
         // 1. Fast path: Filename extension check
+        if (lowerName.endsWith(".pdf")) return CadFileType.PDF
+        if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls") ||
+            lowerName.endsWith(".csv") || lowerName.endsWith(".tsv")) {
+            return CadFileType.EXCEL
+        }
         if (lowerName.endsWith(".stl")) return CadFileType.STL
         if (lowerName.endsWith(".obj")) return CadFileType.OBJ
         if (lowerName.endsWith(".rlf")) return CadFileType.RLF
@@ -138,6 +145,9 @@ object FileTypeResolver {
         // 2. MIME type inspection
         mimeType?.lowercase()?.let { mime ->
             when {
+                mime == "application/pdf" || mime.contains("pdf") -> return CadFileType.PDF
+                mime.contains("spreadsheet") || mime.contains("excel") || mime.contains("sheet") ||
+                        mime.contains("csv") || mime.contains("comma-separated") -> return CadFileType.EXCEL
                 mime.contains("model/stl") || mime == "application/sla" -> return CadFileType.STL
                 mime.contains("model/obj") || mime.contains("wavefront") -> return CadFileType.OBJ
                 mime.contains("3dxml") -> return CadFileType.XML3D
@@ -174,7 +184,37 @@ object FileTypeResolver {
     fun inspectHeaderBytes(headerBytes: ByteArray, fileSize: Long = -1L): CadFileType? {
         if (headerBytes.isEmpty()) return null
 
-        // A. Check AutoCAD DWG magic header (AC10xx or AC)
+        // 1. Check PDF header (%PDF-)
+        if (headerBytes.size >= 5) {
+            val pdfMagic = String(headerBytes, 0, 5, Charsets.US_ASCII)
+            if (pdfMagic == "%PDF-" || pdfMagic.startsWith("%PDF")) {
+                return CadFileType.PDF
+            }
+        }
+
+        // 2. Check Excel ZIP (PK\u0003\u0004 with [Content_Types] or xl/ or workbook)
+        if (headerBytes.size >= 4 && headerBytes[0] == 0x50.toByte() && headerBytes[1] == 0x4B.toByte()) {
+            val sampleAscii = String(headerBytes, 0, minOf(headerBytes.size, 1500), Charsets.US_ASCII)
+            if (sampleAscii.contains("xl/", ignoreCase = true) ||
+                sampleAscii.contains("workbook", ignoreCase = true) ||
+                sampleAscii.contains("spreadsheet", ignoreCase = true)
+            ) {
+                return CadFileType.EXCEL
+            }
+            if (sampleAscii.contains("3dxml", ignoreCase = true) || sampleAscii.contains("3DRep", ignoreCase = true)) {
+                return CadFileType.XML3D
+            }
+        }
+
+        // 3. Check Excel OLE2 Compound Binary (.xls): D0 CF 11 E0 A1 B1 1A E1
+        if (headerBytes.size >= 8 &&
+            headerBytes[0] == 0xD0.toByte() && headerBytes[1] == 0xCF.toByte() &&
+            headerBytes[2] == 0x11.toByte() && headerBytes[3] == 0xE0.toByte()
+        ) {
+            return CadFileType.EXCEL
+        }
+
+        // 4. Check AutoCAD DWG magic header (AC10xx or AC)
         if (headerBytes.size >= 6) {
             val tag = String(headerBytes, 0, 6, Charsets.US_ASCII)
             if (tag.startsWith("AC10") || tag.startsWith("AC")) {
@@ -182,7 +222,7 @@ object FileTypeResolver {
             }
         }
 
-        // B. Check AutoCAD DXF text header (0\nSECTION or contains "SECTION")
+        // 5. Check AutoCAD DXF text header (0\nSECTION or contains "SECTION")
         val sampleAscii = String(headerBytes, 0, minOf(headerBytes.size, 1500), Charsets.US_ASCII)
         if (sampleAscii.contains("SECTION") &&
             (sampleAscii.contains("ENTITIES") || sampleAscii.contains("HEADER") || sampleAscii.contains("TABLES") || sampleAscii.contains("BLOCKS") || sampleAscii.contains("EOF"))
@@ -190,12 +230,7 @@ object FileTypeResolver {
             return CadFileType.DXF
         }
 
-        // C. Check 3DXML (ZIP header or XML <Model_3dxml> / <PolygonalRep>)
-        if (headerBytes.size >= 4 && headerBytes[0] == 0x50.toByte() && headerBytes[1] == 0x4B.toByte()) {
-            if (sampleAscii.contains("3dxml", ignoreCase = true) || sampleAscii.contains("3DRep", ignoreCase = true)) {
-                return CadFileType.XML3D
-            }
-        }
+        // 6. Check 3DXML (XML <Model_3dxml> / <PolygonalRep>)
         if (sampleAscii.contains("<Model_3dxml", ignoreCase = true) ||
             sampleAscii.contains("<PolygonalRep", ignoreCase = true) ||
             (sampleAscii.contains("<Positions>") && sampleAscii.contains("</Positions>"))
@@ -203,13 +238,12 @@ object FileTypeResolver {
             return CadFileType.XML3D
         }
 
-        // D. Check Wavefront OBJ format
+        // 7. Check Wavefront OBJ format
         if (isObjContent(sampleAscii)) {
             return CadFileType.OBJ
         }
 
-        // E. Check STL (Stereolithography 3D Mesh)
-        // E1. ASCII STL: starts with "solid"
+        // 8. Check STL (Stereolithography 3D Mesh)
         val trimmedSample = sampleAscii.trimStart()
         if (trimmedSample.startsWith("solid", ignoreCase = true) &&
             (sampleAscii.contains("facet", ignoreCase = true) || sampleAscii.contains("endsolid", ignoreCase = true) || sampleAscii.contains("normal", ignoreCase = true))
@@ -217,8 +251,6 @@ object FileTypeResolver {
             return CadFileType.STL
         }
 
-        // E2. Binary STL: 80 bytes header + 4 bytes uint32 triangle count (N).
-        // Exact mathematical equation: FileSize == 84 + (N * 50).
         if (headerBytes.size >= 84 && fileSize >= 84L) {
             val byteBuffer = ByteBuffer.wrap(headerBytes, 80, 4).order(ByteOrder.LITTLE_ENDIAN)
             val numTriangles = byteBuffer.int.toLong() and 0xFFFFFFFFL
@@ -228,7 +260,7 @@ object FileTypeResolver {
             }
         }
 
-        // F. Check ArtCAM Relief (RLF) or Model (ART)
+        // 9. Check ArtCAM Relief (RLF) or Model (ART)
         if (sampleAscii.contains("Delcam", ignoreCase = true) ||
             sampleAscii.contains("ArtCAM", ignoreCase = true) ||
             sampleAscii.contains("RLF", ignoreCase = true)
@@ -236,7 +268,7 @@ object FileTypeResolver {
             return CadFileType.RLF
         }
 
-        // G. Check Vectric Aspire (CRV / CRV3D / Aspire 3D toolpath)
+        // 10. Check Vectric Aspire
         if (sampleAscii.contains("Vectric", ignoreCase = true) ||
             sampleAscii.contains("Aspire", ignoreCase = true) ||
             (sampleAscii.contains("3D Finish", ignoreCase = true) && sampleAscii.contains("Ball Nose", ignoreCase = true))
@@ -244,7 +276,14 @@ object FileTypeResolver {
             return CadFileType.ASPIRE_3D
         }
 
-        // H. Check G-Code Toolpath patterns
+        // 11. Check CSV spreadsheet indicators
+        val firstLine = sampleAscii.lines().firstOrNull()?.trim() ?: ""
+        if (firstLine.contains(",") && (firstLine.contains("Item") || firstLine.contains("Qty") ||
+                    firstLine.contains("Description") || firstLine.contains("Material") || firstLine.contains("Part"))) {
+            return CadFileType.EXCEL
+        }
+
+        // 12. Check G-Code Toolpath patterns
         val gCodeKeywords = listOf("G0", "G1", "G2", "G3", "G00", "G01", "G02", "G03", "G90", "G91", "M03", "M3", "M05", "M5", "M30", "G17", "G20", "G21")
         val lines = sampleAscii.lines().take(25)
         var gCodeMatchCount = 0
@@ -282,6 +321,14 @@ object FileTypeResolver {
     private fun ensureProperExtension(fileName: String, type: CadFileType): String {
         val lower = fileName.lowercase()
         return when (type) {
+            CadFileType.PDF -> if (lower.endsWith(".pdf")) fileName else "$fileName.pdf"
+            CadFileType.EXCEL -> {
+                if (lower.endsWith(".xlsx") || lower.endsWith(".xls") || lower.endsWith(".csv") || lower.endsWith(".tsv")) {
+                    fileName
+                } else {
+                    "$fileName.xlsx"
+                }
+            }
             CadFileType.STL -> if (lower.endsWith(".stl")) fileName else "$fileName.stl"
             CadFileType.OBJ -> if (lower.endsWith(".obj")) fileName else "$fileName.obj"
             CadFileType.RLF -> if (lower.endsWith(".rlf")) fileName else "$fileName.rlf"

@@ -46,6 +46,11 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
                 <data android:scheme="file" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
                 <data android:mimeType="model/stl" />
                 <data android:mimeType="application/sla" />
                 <data android:mimeType="model/obj" />
@@ -65,7 +70,7 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <!-- File extension filters for 3D, Carving Relief & CAD files -->
+            <!-- File extension filters for 3D, Carving Relief, CAD, Excel and PDF files -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -73,6 +78,11 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:host="*" />
+                <data android:pathPattern=".*\\.xlsx" />
+                <data android:pathPattern=".*\\.xls" />
+                <data android:pathPattern=".*\\.csv" />
+                <data android:pathPattern=".*\\.tsv" />
+                <data android:pathPattern=".*\\.pdf" />
                 <data android:pathPattern=".*\\.stl" />
                 <data android:pathPattern=".*\\.obj" />
                 <data android:pathPattern=".*\\.rlf" />

@@ -28,9 +28,11 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,6 +73,8 @@ fun HomeScreen(
     onNavigateToStlViewer: () -> Unit,
     onNavigateToDxfViewer: () -> Unit,
     onNavigateToCadFolder: () -> Unit,
+    onNavigateToExcelViewer: () -> Unit,
+    onNavigateToPdfViewer: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToHelp: () -> Unit,
     onNavigateToPrivacy: () -> Unit
@@ -95,7 +99,7 @@ fun HomeScreen(
         return null
     }
 
-    // SAF Document Picker (opens full System File Manager with side drawer for all folders)
+    // Universal SAF Document Picker (opens full System File Manager with side drawer for all folders)
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -103,10 +107,23 @@ fun HomeScreen(
             val resolved = FileTypeResolver.resolve(context, it)
             viewModel.openResolvedFile(resolved, autoNavigate = false)
             when {
+                resolved.fileType == CadFileType.EXCEL -> onNavigateToExcelViewer()
+                resolved.fileType == CadFileType.PDF -> onNavigateToPdfViewer()
                 resolved.fileType.is3DModel -> onNavigateToStlViewer()
                 resolved.fileType == CadFileType.DXF || resolved.fileType == CadFileType.DWG -> onNavigateToDxfViewer()
                 else -> onNavigateToProgramViewer()
             }
+        }
+    }
+
+    // Dedicated 3D Model Picker
+    val stlFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+            onNavigateToStlViewer()
         }
     }
 
@@ -118,6 +135,28 @@ fun HomeScreen(
             val resolved = FileTypeResolver.resolve(context, it)
             viewModel.openResolvedFile(resolved, autoNavigate = false)
             onNavigateToDxfViewer()
+        }
+    }
+
+    // Dedicated Excel / CSV File Picker: directly opens Excel Viewer
+    val excelFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+            onNavigateToExcelViewer()
+        }
+    }
+
+    // Dedicated PDF File Picker: directly opens PDF Document Viewer
+    val pdfFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+            onNavigateToPdfViewer()
         }
     }
 
@@ -222,6 +261,8 @@ fun HomeScreen(
                                         is ActiveModel.GCode -> onNavigateToProgramViewer()
                                         is ActiveModel.STL -> onNavigateToStlViewer()
                                         is ActiveModel.DXF -> onNavigateToDxfViewer()
+                                        is ActiveModel.Excel -> onNavigateToExcelViewer()
+                                        is ActiveModel.Pdf -> onNavigateToPdfViewer()
                                         else -> {}
                                     }
                                 },
@@ -229,51 +270,72 @@ fun HomeScreen(
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                                Text("View 3D", color = Color.Black, fontWeight = FontWeight.Bold)
+                                Text("View File", color = Color.Black, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
             }
 
-            // Main Actions Grid
+            // Main Actions Grid - 5 Distinct File Viewers & Folders
             item {
-                Text(
-                    text = "OPEN FILE",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF94A3B8)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "FILE VIEWERS & FOLDERS (5 CATEGORIES)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF94A3B8)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF25D366).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "WhatsApp Auto-Detect Active",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF25D366)
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Folder 1 & Folder 2
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "Toolpath Simulation",
-                        subtitle = "G-Code (.tap .nc .bin)",
+                        title = "1. Toolpath G-Code",
+                        subtitle = "CNC Code (.tap .nc .bin)",
                         icon = Icons.Default.Code,
                         accentColor = Color(0xFF00E5FF),
                         modifier = Modifier.weight(1f),
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "3D Viewer",
+                        title = "2. 3D Model & Relief",
                         subtitle = "STL, OBJ, RLF, ART, 3DXML, Aspire",
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFFFD700),
                         modifier = Modifier.weight(1f),
-                        onClick = { filePicker.launch(arrayOf("*/*")) }
+                        onClick = { stlFilePicker.launch(arrayOf("*/*")) }
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // Folder 3 & Folder 4
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "AutoCAD Viewer",
+                        title = "3. AutoCAD Drawing",
                         subtitle = "CAD Drawing (.dxf .dwg)",
                         icon = Icons.Default.Layers,
                         accentColor = Color(0xFF10B981),
@@ -281,8 +343,32 @@ fun HomeScreen(
                         onClick = { autocadFilePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "CAD Folder",
-                        subtitle = "AutoCAD Blueprints",
+                        title = "4. Excel Spreadsheet",
+                        subtitle = "Excel (.xlsx .xls .csv)",
+                        icon = Icons.Default.TableChart,
+                        accentColor = Color(0xFF34D399),
+                        modifier = Modifier.weight(1f),
+                        onClick = { excelFilePicker.launch(arrayOf("*/*")) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Folder 5
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ActionTile(
+                        title = "5. PDF Document Viewer",
+                        subtitle = "Blueprints & Job Orders (.pdf)",
+                        icon = Icons.Default.PictureAsPdf,
+                        accentColor = Color(0xFFEF4444),
+                        modifier = Modifier.weight(1f),
+                        onClick = { pdfFilePicker.launch(arrayOf("*/*")) }
+                    )
+                    ActionTile(
+                        title = "CAD Folder Browser",
+                        subtitle = "Browse Device Storage",
                         icon = Icons.Default.FolderOpen,
                         accentColor = Color(0xFF059669),
                         modifier = Modifier.weight(1f),
@@ -291,84 +377,13 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Prominent Dedicated AutoCAD Viewer Option (Direct File Selection)
+                // Dedicated Folder 4 Card: Excel File Viewer
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { autocadFilePicker.launch(arrayOf("*/*")) },
+                        .clickable { excelFilePicker.launch(arrayOf("*/*")) },
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
                     shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF059669)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Layers,
-                                contentDescription = "AutoCAD Viewer",
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "AutoCAD Viewer",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = ".DXF / .DWG",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = "ऑटोकेड फ़ाइल चुनें (.dxf, .dwg) • तुरंत फ़िट स्क्रीन में खुलेगी",
-                                fontSize = 11.sp,
-                                color = Color(0xFFA7F3D0)
-                            )
-                        }
-                        Button(
-                            onClick = { autocadFilePicker.launch(arrayOf("*/*")) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Select File", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Dedicated AutoCAD Drawings Folder Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onNavigateToCadFolder() },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -380,13 +395,13 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1E293B)),
+                                .background(Color(0xFF059669)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                tint = Color(0xFF10B981),
+                                Icons.Default.TableChart,
+                                contentDescription = "Excel Viewer",
+                                tint = Color.White,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -394,41 +409,112 @@ fun HomeScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "AutoCAD Drawings Folder",
-                                    fontSize = 14.sp,
+                                    text = "Folder 4: Excel File Viewer",
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFF334155), RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = "BROWSE",
+                                        text = "XLSX / CSV",
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF94A3B8)
+                                        color = Color.Black
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "ऑटोकेड ड्राइंग्स फ़ोल्डर • Browse device folders for drawings",
+                                text = "एक्सेल स्प्रेडशीट देखें (.xlsx, .xls, .csv) • WhatsApp से तुरंत खुलेगी",
                                 fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
+                                color = Color(0xFFA7F3D0)
                             )
                         }
                         Button(
-                            onClick = onNavigateToCadFolder,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            onClick = { excelFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("Browse", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Select Excel", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
+
+                // Dedicated Folder 5 Card: PDF Document Viewer
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { pdfFilePicker.launch(arrayOf("*/*")) },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF450A0A)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFDC2626)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.PictureAsPdf,
+                                contentDescription = "PDF Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Folder 5: PDF Document Viewer",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFEF4444), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = ".PDF",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "पीडीएफ ड्राइंग व जॉब आर्डर देखें • ज़ूम व पैन सपोर्ट के साथ",
+                                fontSize = 11.sp,
+                                color = Color(0xFFFECACA)
+                            )
+                        }
+                        Button(
+                            onClick = { pdfFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Select PDF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
                 // Storage Tip Box
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -449,7 +535,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "💡 Tip to see ALL device folders: In the file manager, tap the top-left ☰ menu and select 'Show Internal Storage' or 'Phone Storage'.",
+                            text = "💡 WhatsApp & File Tip: WhatsApp se aayi koi bhi STL, OBJ, RLF, ART, 3DXML, Aspire, DXF, DWG, Excel (.xlsx/.csv) ya PDF file ko tap karne par app use turant identify karke proper viewer me open karegi.",
                             fontSize = 11.sp,
                             color = Color(0xFF94A3B8),
                             lineHeight = 15.sp
@@ -458,10 +544,10 @@ fun HomeScreen(
                 }
             }
 
-            // Built-in Demo Samples Card
+            // Built-in Demo Samples Card (All 5 Formats)
             item {
                 Text(
-                    text = "PRE-LOADED DEMO FILES",
+                    text = "PRE-LOADED DEMO FILES (ALL 5 FORMATS)",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF94A3B8)
@@ -480,7 +566,7 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("3D Relief (.tap)", fontSize = 11.sp, color = Color(0xFF00E5FF))
+                        Text("3D Relief (.tap)", fontSize = 10.sp, color = Color(0xFF00E5FF))
                     }
                     OutlinedButton(
                         onClick = {
@@ -490,7 +576,7 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Bracket (.stl)", fontSize = 11.sp, color = Color(0xFFFFD700))
+                        Text("Bracket (.stl)", fontSize = 10.sp, color = Color(0xFFFFD700))
                     }
                     OutlinedButton(
                         onClick = {
@@ -501,6 +587,32 @@ fun HomeScreen(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text("Flange (.dxf)", fontSize = 10.sp, color = Color(0xFF10B981))
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.loadSampleExcel()
+                            onNavigateToExcelViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Cutting List (.xlsx)", fontSize = 11.sp, color = Color(0xFF34D399))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.loadSamplePdf()
+                            onNavigateToPdfViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("CNC Blueprint (.pdf)", fontSize = 11.sp, color = Color(0xFFEF4444))
                     }
                 }
             }
@@ -539,7 +651,7 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No recent files opened yet.\nTap one of the buttons above to load a .tap, .stl, or .dxf file!",
+                            text = "No recent files opened yet.\nTap one of the folder buttons above to load a .tap, .stl, .dxf, .xlsx, or .pdf file!",
                             fontSize = 13.sp,
                             color = Color(0xFF64748B),
                             lineHeight = 18.sp
@@ -554,6 +666,8 @@ fun HomeScreen(
                             .clickable {
                                 viewModel.openUri(android.net.Uri.parse(item.uriString), item.name)
                                 when (item.fileType) {
+                                    "EXCEL" -> onNavigateToExcelViewer()
+                                    "PDF" -> onNavigateToPdfViewer()
                                     "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> onNavigateToStlViewer()
                                     "DXF", "DWG" -> onNavigateToDxfViewer()
                                     else -> onNavigateToProgramViewer()
@@ -570,12 +684,16 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = when (item.fileType) {
+                                    "EXCEL" -> Icons.Default.TableChart
+                                    "PDF" -> Icons.Default.PictureAsPdf
                                     "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Icons.Default.ViewInAr
                                     "DXF", "DWG" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },
                                 contentDescription = null,
                                 tint = when (item.fileType) {
+                                    "EXCEL" -> Color(0xFF10B981)
+                                    "PDF" -> Color(0xFFEF4444)
                                     "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Color(0xFFFFD700)
                                     "DXF", "DWG" -> Color(0xFF10B981)
                                     else -> Color(0xFF00E5FF)
