@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -27,6 +30,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.StlViewerScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.MainViewModel
+import com.example.util.FileTypeResolver
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -39,7 +43,7 @@ class MainActivity : ComponentActivity() {
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
 
-        // Handle Intent if opened via file manager
+        // Handle Intent if opened via WhatsApp or external file manager
         handleFileIntent(intent)
 
         setContent {
@@ -49,6 +53,17 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
+                    val pendingDestination by viewModel.pendingDestination.collectAsState()
+
+                    // Automatically navigate to the corresponding viewer when opened from WhatsApp/Intent
+                    LaunchedEffect(pendingDestination) {
+                        pendingDestination?.let { destination ->
+                            navController.navigate(destination) {
+                                launchSingleTop = true
+                            }
+                            viewModel.consumePendingDestination()
+                        }
+                    }
 
                     NavHost(navController = navController, startDestination = "home") {
                         composable("home") {
@@ -105,15 +120,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleFileIntent(intent)
     }
 
     private fun handleFileIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_VIEW || intent?.action == Intent.ACTION_SEND) {
-            val uri = intent.data
-            if (uri != null) {
-                val name = uri.lastPathSegment?.substringAfterLast('/') ?: "opened_file"
-                viewModel.openUri(uri, name)
+        if (intent == null) return
+        if (intent.action == Intent.ACTION_VIEW || intent.action == Intent.ACTION_SEND) {
+            val resolved = FileTypeResolver.resolveFromIntent(applicationContext, intent)
+            if (resolved != null) {
+                viewModel.openResolvedFile(resolved, autoNavigate = true)
             }
         }
     }

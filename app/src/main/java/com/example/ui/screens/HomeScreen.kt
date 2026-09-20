@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.components.AdMobBanner
 import com.example.ui.viewmodel.ActiveModel
 import com.example.ui.viewmodel.MainViewModel
+import com.example.util.CadFileType
+import com.example.util.FileTypeResolver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,13 +100,12 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "imported_file"
-            viewModel.openUri(it, fileName)
-            val lower = fileName.lowercase()
-            when {
-                lower.endsWith(".stl") -> onNavigateToStlViewer()
-                lower.endsWith(".dxf") || lower.endsWith(".dwg") -> onNavigateToDxfViewer()
-                else -> onNavigateToProgramViewer()
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+            when (resolved.fileType) {
+                CadFileType.STL -> onNavigateToStlViewer()
+                CadFileType.DXF, CadFileType.DWG -> onNavigateToDxfViewer()
+                CadFileType.TOOLPATH_GCODE -> onNavigateToProgramViewer()
             }
         }
     }
@@ -114,8 +115,8 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dxf"
-            viewModel.openUri(it, fileName)
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
             onNavigateToDxfViewer()
         }
     }
@@ -554,7 +555,7 @@ fun HomeScreen(
                                 viewModel.openUri(android.net.Uri.parse(item.uriString), item.name)
                                 when (item.fileType) {
                                     "STL" -> onNavigateToStlViewer()
-                                    "DXF" -> onNavigateToDxfViewer()
+                                    "DXF", "DWG" -> onNavigateToDxfViewer()
                                     else -> onNavigateToProgramViewer()
                                 }
                             },
@@ -570,13 +571,13 @@ fun HomeScreen(
                             Icon(
                                 imageVector = when (item.fileType) {
                                     "STL" -> Icons.Default.ViewInAr
-                                    "DXF" -> Icons.Default.Layers
+                                    "DXF", "DWG" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },
                                 contentDescription = null,
                                 tint = when (item.fileType) {
                                     "STL" -> Color(0xFFFFD700)
-                                    "DXF" -> Color(0xFF10B981)
+                                    "DXF", "DWG" -> Color(0xFF10B981)
                                     else -> Color(0xFF00E5FF)
                                 },
                                 modifier = Modifier.size(24.dp)

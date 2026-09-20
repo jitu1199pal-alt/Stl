@@ -10,6 +10,9 @@ import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
 import com.example.data.repository.FileRepository
 import com.example.ui.render3d.StlRenderMode
+import com.example.util.CadFileType
+import com.example.util.FileTypeResolver
+import com.example.util.ResolvedFileInfo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,26 +76,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadSampleGCode()
     }
 
-    fun openUri(uri: Uri, fileName: String) {
+    // Target destination when file is opened via WhatsApp or other apps
+    private val _pendingDestination = MutableStateFlow<String?>(null)
+    val pendingDestination: StateFlow<String?> = _pendingDestination.asStateFlow()
+
+    fun consumePendingDestination() {
+        _pendingDestination.value = null
+    }
+
+    fun openResolvedFile(info: ResolvedFileInfo, autoNavigate: Boolean = true) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                val lower = fileName.lowercase()
-                when {
-                    lower.endsWith(".stl") -> {
-                        val stl = repository.parseStlFromUri(uri, fileName)
+                when (info.fileType) {
+                    CadFileType.STL -> {
+                        val stl = repository.parseStlFromUri(info.uri, info.fileName)
                         _activeModel.value = ActiveModel.STL(stl)
+                        if (autoNavigate) {
+                            _pendingDestination.value = "stl_viewer"
+                        }
                     }
-                    lower.endsWith(".dxf") || lower.endsWith(".dwg") -> {
-                        val dxf = repository.parseDxfFromUri(uri, fileName)
+                    CadFileType.DXF, CadFileType.DWG -> {
+                        val dxf = repository.parseDxfFromUri(info.uri, info.fileName)
                         _activeModel.value = ActiveModel.DXF(dxf)
                         _dxfVisibleLayers.value = dxf.layers.toSet()
+                        if (autoNavigate) {
+                            _pendingDestination.value = "dxf_viewer"
+                        }
                     }
-                    else -> { // .bin, .tap, .nc, .txt, .gcode, .cnc, .din
-                        val gcode = repository.parseGCodeFromUri(uri, fileName)
+                    CadFileType.TOOLPATH_GCODE -> {
+                        val gcode = repository.parseGCodeFromUri(info.uri, info.fileName)
                         _activeModel.value = ActiveModel.GCode(gcode)
                         resetSimulation()
+                        if (autoNavigate) {
+                            _pendingDestination.value = "program_viewer"
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -101,6 +120,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun openUri(uri: Uri, fileName: String, autoNavigate: Boolean = false) {
+        val detected = FileTypeResolver.detectType(getApplication(), uri, fileName)
+        val info = ResolvedFileInfo(uri, fileName, detected)
+        openResolvedFile(info, autoNavigate = autoNavigate)
     }
 
     fun loadSampleGCode() {
