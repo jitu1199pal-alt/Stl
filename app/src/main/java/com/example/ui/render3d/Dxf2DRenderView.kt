@@ -41,6 +41,13 @@ fun Dxf2DRenderView(
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
     }
+    val bitmapPaint = remember {
+        Paint().apply {
+            isAntiAlias = true
+            isFilterBitmap = true
+            isDither = true
+        }
+    }
 
     Box(
         modifier = modifier
@@ -144,7 +151,7 @@ fun Dxf2DRenderView(
                 val right = kotlin.math.max(p1Arr[0], p2Arr[0])
                 val bottom = kotlin.math.max(p1Arr[1], p2Arr[1])
                 val destRect = android.graphics.RectF(left, top, right, bottom)
-                drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null, destRect, null)
+                drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null, destRect, bitmapPaint)
             }
 
             // Draw DXF Entities

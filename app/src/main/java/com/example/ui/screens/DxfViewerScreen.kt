@@ -129,8 +129,17 @@ fun DxfViewerScreen(
                             }
                         }
                         if (dxfModel != null) {
+                            val subtitleText = if (isDwgFile) {
+                                if (dxfModel.previewBitmap != null) {
+                                    "DWG Preview (${dxfModel.previewBitmap.width}×${dxfModel.previewBitmap.height}) • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                } else {
+                                    "DWG Drawing • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                }
+                            } else {
+                                "Entities: ${dxfModel.entities.size} • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                            }
                             Text(
-                                text = "Entities: ${dxfModel.entities.size} • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%",
+                                text = subtitleText,
                                 fontSize = 11.sp,
                                 color = Color(0xFF94A3B8)
                             )
@@ -224,15 +233,15 @@ fun DxfViewerScreen(
                                 accentColor = if (isDwgFile) Color(0xFF00E5FF) else Color(0xFF10B981)
                             )
                             TelemetryBadge(
-                                label = "BOUNDS X",
-                                value = "%.1f".format(dxfModel.bounds.sizeX),
-                                unit = "mm",
+                                label = if (isDwgFile && dxfModel.previewBitmap != null) "WIDTH" else "BOUNDS X",
+                                value = if (isDwgFile && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.width}" else "%.1f".format(dxfModel.bounds.sizeX),
+                                unit = if (isDwgFile && dxfModel.previewBitmap != null) "px" else "mm",
                                 accentColor = Color(0xFF10B981)
                             )
                             TelemetryBadge(
-                                label = "BOUNDS Y",
-                                value = "%.1f".format(dxfModel.bounds.sizeY),
-                                unit = "mm",
+                                label = if (isDwgFile && dxfModel.previewBitmap != null) "HEIGHT" else "BOUNDS Y",
+                                value = if (isDwgFile && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.height}" else "%.1f".format(dxfModel.bounds.sizeY),
+                                unit = if (isDwgFile && dxfModel.previewBitmap != null) "px" else "mm",
                                 accentColor = Color(0xFF00E5FF)
                             )
                             TelemetryBadge(
@@ -241,6 +250,61 @@ fun DxfViewerScreen(
                                 unit = "%",
                                 accentColor = Color(0xFFFFD700)
                             )
+                        }
+                    }
+
+                    if (isDwgFile && dxfModel.previewBitmap == null && dxfModel.entities.isEmpty()) {
+                        Card(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xF01E293B)),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = CardDefaults.cardElevation(8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = "AutoCAD DWG Drawing",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = dxfModel.fileName,
+                                    fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF00E5FF)
+                                )
+                                HorizontalDivider(color = Color(0xFF334155))
+                                Text(
+                                    text = "Detected CAD Layers (${dxfModel.layers.size}):",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                                Text(
+                                    text = dxfModel.layers.joinToString(" • "),
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF94A3B8),
+                                    textAlign = TextAlign.Center
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(
+                                        text = "💡 Tip: Is DWG file me embedded preview thumbnail nahi hai (AutoCAD THUMBSAVE=0). AutoCAD me THUMBSAVE=1 karke save karein ya direct vector ke liye DXF me export karein.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFFFD700),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
                         }
                     }
 
