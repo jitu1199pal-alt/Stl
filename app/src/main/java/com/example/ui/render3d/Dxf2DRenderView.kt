@@ -135,6 +135,18 @@ fun Dxf2DRenderView(
 
             val strokeWidthPx = (2.2f * cameraState.zoom).coerceIn(1.5f, 6.0f)
 
+            // If an AutoCAD drawing preview bitmap is present, render it on the CAD canvas
+            model.previewBitmap?.let { bitmap ->
+                cameraState.projectFast(bounds.minX, bounds.maxY, 0f, fastTransform, p1Arr)
+                cameraState.projectFast(bounds.maxX, bounds.minY, 0f, fastTransform, p2Arr)
+                val left = kotlin.math.min(p1Arr[0], p2Arr[0])
+                val top = kotlin.math.min(p1Arr[1], p2Arr[1])
+                val right = kotlin.math.max(p1Arr[0], p2Arr[0])
+                val bottom = kotlin.math.max(p1Arr[1], p2Arr[1])
+                val destRect = android.graphics.RectF(left, top, right, bottom)
+                drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null, destRect, null)
+            }
+
             // Draw DXF Entities
             for (entity in model.entities) {
                 val layerName = when (entity) {

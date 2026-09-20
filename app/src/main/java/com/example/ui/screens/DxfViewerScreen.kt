@@ -242,35 +242,6 @@ fun DxfViewerScreen(
                                 accentColor = Color(0xFFFFD700)
                             )
                         }
-
-                        if (isDwgFile) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.85f)
-                                    .padding(top = 4.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xF0064E3B)),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.Layers,
-                                        contentDescription = null,
-                                        tint = Color(0xFF34D399),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "AutoCAD DWG • सटीक नक्काशी और वेक्टर्स देखने के लिए CAD में 'Save As DXF' करके चुनें",
-                                        fontSize = 11.sp,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
                     }
 
                     // Floating CAD Navigation & Zoom Controls (Right Side)

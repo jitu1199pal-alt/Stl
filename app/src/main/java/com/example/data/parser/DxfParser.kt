@@ -31,7 +31,8 @@ data class DxfModel(
     val entities: List<DxfEntity>,
     val layers: List<String>,
     val bounds: BoundingBox3D,
-    val totalEntityCount: Int = entities.size
+    val totalEntityCount: Int = entities.size,
+    val previewBitmap: android.graphics.Bitmap? = null
 )
 
 object DxfParser {
