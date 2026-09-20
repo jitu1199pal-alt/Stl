@@ -76,11 +76,34 @@ fun StlViewerScreen(
             TopAppBar(
                 title = {
                     Column {
+                        val fileName = stlModel?.fileName ?: "3D Model"
+                        val ext = fileName.substringAfterLast('.', "").uppercase().ifEmpty { "3D" }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = fileName,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFFFFD700), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = ext,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+                        }
                         Text(
-                            text = stlModel?.fileName ?: "3D STL Viewer",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
+                            text = "3D Relief & Model Viewer • ${stlModel?.faceCount ?: 0} Triangles",
+                            fontSize = 11.sp,
+                            color = Color(0xFF94A3B8)
                         )
                     }
                 },
@@ -96,7 +119,7 @@ fun StlViewerScreen(
     ) { innerPadding ->
         if (stlModel == null) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                Text("No STL model loaded", color = Color.White)
+                Text("No 3D model loaded", color = Color.White)
             }
         } else {
             Column(

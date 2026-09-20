@@ -8,11 +8,19 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-enum class CadFileType {
-    STL,
-    DXF,
-    DWG,
-    TOOLPATH_GCODE
+enum class CadFileType(val displayName: String, val badge: String) {
+    STL("3D STL Model", "STL"),
+    OBJ("Wavefront 3D OBJ", "OBJ"),
+    RLF("ArtCAM 3D Relief", "RLF"),
+    ART("ArtCAM 3D Model", "ART"),
+    XML3D("Dassault 3DXML", "3DXML"),
+    ASPIRE_3D("Vectric Aspire 3D", "ASPIRE"),
+    DXF("AutoCAD DXF Drawing", "DXF"),
+    DWG("AutoCAD DWG Drawing", "DWG"),
+    TOOLPATH_GCODE("CNC Toolpath Program", "G-CODE");
+
+    val is3DModel: Boolean
+        get() = this in listOf(STL, OBJ, RLF, ART, XML3D, ASPIRE_3D)
 }
 
 data class ResolvedFileInfo(
@@ -44,7 +52,7 @@ object FileTypeResolver {
     }
 
     /**
-     * Resolves display name and accurate CAD / 3D / Toolpath type for a given Content or File URI.
+     * Resolves display name and accurate CAD / 3D / Relief / Toolpath type for a given Content or File URI.
      */
     fun resolve(context: Context, uri: Uri, mimeType: String? = null): ResolvedFileInfo {
         var displayName = queryDisplayName(context, uri)
@@ -110,6 +118,14 @@ object FileTypeResolver {
 
         // 1. Fast path: Filename extension check
         if (lowerName.endsWith(".stl")) return CadFileType.STL
+        if (lowerName.endsWith(".obj")) return CadFileType.OBJ
+        if (lowerName.endsWith(".rlf")) return CadFileType.RLF
+        if (lowerName.endsWith(".art")) return CadFileType.ART
+        if (lowerName.endsWith(".3dxml")) return CadFileType.XML3D
+        if (lowerName.endsWith(".crv") || lowerName.endsWith(".crv3d") ||
+            lowerName.endsWith(".v3m") || lowerName.endsWith(".3dclip")) {
+            return CadFileType.ASPIRE_3D
+        }
         if (lowerName.endsWith(".dxf")) return CadFileType.DXF
         if (lowerName.endsWith(".dwg")) return CadFileType.DWG
         if (lowerName.endsWith(".tap") || lowerName.endsWith(".nc") ||
@@ -122,7 +138,10 @@ object FileTypeResolver {
         // 2. MIME type inspection
         mimeType?.lowercase()?.let { mime ->
             when {
-                mime.contains("stl") || mime == "application/sla" -> return CadFileType.STL
+                mime.contains("model/stl") || mime == "application/sla" -> return CadFileType.STL
+                mime.contains("model/obj") || mime.contains("wavefront") -> return CadFileType.OBJ
+                mime.contains("3dxml") -> return CadFileType.XML3D
+                mime.contains("artcam") || mime.contains("rlf") -> return CadFileType.RLF
                 mime.contains("dxf") -> return CadFileType.DXF
                 mime.contains("dwg") || mime.contains("autocad") -> return CadFileType.DWG
                 mime.contains("gcode") -> return CadFileType.TOOLPATH_GCODE
@@ -133,7 +152,7 @@ object FileTypeResolver {
         // Especially crucial for WhatsApp content URIs like content://.../1928374 without extensions
         try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
-                val buffer = ByteArray(1024)
+                val buffer = ByteArray(2048)
                 val bytesRead = stream.read(buffer)
                 if (bytesRead > 0) {
                     val fileSize = queryFileSize(context, uri)
@@ -145,7 +164,7 @@ object FileTypeResolver {
             }
         } catch (_: Exception) {}
 
-        // 4. Default fallback: If it ends in .txt or unknown, default to G-Code toolpath
+        // 4. Default fallback: G-Code toolpath
         return CadFileType.TOOLPATH_GCODE
     }
 
@@ -155,7 +174,7 @@ object FileTypeResolver {
     fun inspectHeaderBytes(headerBytes: ByteArray, fileSize: Long = -1L): CadFileType? {
         if (headerBytes.isEmpty()) return null
 
-        // A. Check AutoCAD DWG magic header (AC10xx)
+        // A. Check AutoCAD DWG magic header (AC10xx or AC)
         if (headerBytes.size >= 6) {
             val tag = String(headerBytes, 0, 6, Charsets.US_ASCII)
             if (tag.startsWith("AC10") || tag.startsWith("AC")) {
@@ -164,15 +183,33 @@ object FileTypeResolver {
         }
 
         // B. Check AutoCAD DXF text header (0\nSECTION or contains "SECTION")
-        val sampleAscii = String(headerBytes, 0, minOf(headerBytes.size, 1024), Charsets.US_ASCII)
+        val sampleAscii = String(headerBytes, 0, minOf(headerBytes.size, 1500), Charsets.US_ASCII)
         if (sampleAscii.contains("SECTION") &&
             (sampleAscii.contains("ENTITIES") || sampleAscii.contains("HEADER") || sampleAscii.contains("TABLES") || sampleAscii.contains("BLOCKS") || sampleAscii.contains("EOF"))
         ) {
             return CadFileType.DXF
         }
 
-        // C. Check STL (Stereolithography 3D Mesh)
-        // C1. ASCII STL: starts with "solid"
+        // C. Check 3DXML (ZIP header or XML <Model_3dxml> / <PolygonalRep>)
+        if (headerBytes.size >= 4 && headerBytes[0] == 0x50.toByte() && headerBytes[1] == 0x4B.toByte()) {
+            if (sampleAscii.contains("3dxml", ignoreCase = true) || sampleAscii.contains("3DRep", ignoreCase = true)) {
+                return CadFileType.XML3D
+            }
+        }
+        if (sampleAscii.contains("<Model_3dxml", ignoreCase = true) ||
+            sampleAscii.contains("<PolygonalRep", ignoreCase = true) ||
+            (sampleAscii.contains("<Positions>") && sampleAscii.contains("</Positions>"))
+        ) {
+            return CadFileType.XML3D
+        }
+
+        // D. Check Wavefront OBJ format
+        if (isObjContent(sampleAscii)) {
+            return CadFileType.OBJ
+        }
+
+        // E. Check STL (Stereolithography 3D Mesh)
+        // E1. ASCII STL: starts with "solid"
         val trimmedSample = sampleAscii.trimStart()
         if (trimmedSample.startsWith("solid", ignoreCase = true) &&
             (sampleAscii.contains("facet", ignoreCase = true) || sampleAscii.contains("endsolid", ignoreCase = true) || sampleAscii.contains("normal", ignoreCase = true))
@@ -180,7 +217,7 @@ object FileTypeResolver {
             return CadFileType.STL
         }
 
-        // C2. Binary STL: 80 bytes header + 4 bytes uint32 triangle count (N).
+        // E2. Binary STL: 80 bytes header + 4 bytes uint32 triangle count (N).
         // Exact mathematical equation: FileSize == 84 + (N * 50).
         if (headerBytes.size >= 84 && fileSize >= 84L) {
             val byteBuffer = ByteBuffer.wrap(headerBytes, 80, 4).order(ByteOrder.LITTLE_ENDIAN)
@@ -191,9 +228,25 @@ object FileTypeResolver {
             }
         }
 
-        // D. Check G-Code Toolpath patterns
+        // F. Check ArtCAM Relief (RLF) or Model (ART)
+        if (sampleAscii.contains("Delcam", ignoreCase = true) ||
+            sampleAscii.contains("ArtCAM", ignoreCase = true) ||
+            sampleAscii.contains("RLF", ignoreCase = true)
+        ) {
+            return CadFileType.RLF
+        }
+
+        // G. Check Vectric Aspire (CRV / CRV3D / Aspire 3D toolpath)
+        if (sampleAscii.contains("Vectric", ignoreCase = true) ||
+            sampleAscii.contains("Aspire", ignoreCase = true) ||
+            (sampleAscii.contains("3D Finish", ignoreCase = true) && sampleAscii.contains("Ball Nose", ignoreCase = true))
+        ) {
+            return CadFileType.ASPIRE_3D
+        }
+
+        // H. Check G-Code Toolpath patterns
         val gCodeKeywords = listOf("G0", "G1", "G2", "G3", "G00", "G01", "G02", "G03", "G90", "G91", "M03", "M3", "M05", "M5", "M30", "G17", "G20", "G21")
-        val lines = sampleAscii.lines().take(20)
+        val lines = sampleAscii.lines().take(25)
         var gCodeMatchCount = 0
         for (line in lines) {
             val upper = line.trim().uppercase()
@@ -214,10 +267,33 @@ object FileTypeResolver {
         return null
     }
 
+    private fun isObjContent(sample: String): Boolean {
+        var vCount = 0
+        var fCount = 0
+        for (line in sample.lines().take(30)) {
+            val t = line.trim()
+            if (t.startsWith("v ") || t.startsWith("v\t")) vCount++
+            if (t.startsWith("f ") || t.startsWith("f\t")) fCount++
+            if (t.startsWith("vn ") || t.startsWith("vt ")) vCount++
+        }
+        return (vCount >= 2 && fCount >= 1) || vCount >= 4
+    }
+
     private fun ensureProperExtension(fileName: String, type: CadFileType): String {
         val lower = fileName.lowercase()
         return when (type) {
             CadFileType.STL -> if (lower.endsWith(".stl")) fileName else "$fileName.stl"
+            CadFileType.OBJ -> if (lower.endsWith(".obj")) fileName else "$fileName.obj"
+            CadFileType.RLF -> if (lower.endsWith(".rlf")) fileName else "$fileName.rlf"
+            CadFileType.ART -> if (lower.endsWith(".art")) fileName else "$fileName.art"
+            CadFileType.XML3D -> if (lower.endsWith(".3dxml")) fileName else "$fileName.3dxml"
+            CadFileType.ASPIRE_3D -> {
+                if (lower.endsWith(".crv") || lower.endsWith(".crv3d") || lower.endsWith(".v3m") || lower.endsWith(".3dclip")) {
+                    fileName
+                } else {
+                    "$fileName.crv3d"
+                }
+            }
             CadFileType.DXF -> if (lower.endsWith(".dxf")) fileName else "$fileName.dxf"
             CadFileType.DWG -> if (lower.endsWith(".dwg")) fileName else "$fileName.dwg"
             CadFileType.TOOLPATH_GCODE -> {

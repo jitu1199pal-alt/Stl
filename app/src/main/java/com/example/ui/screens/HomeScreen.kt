@@ -102,10 +102,10 @@ fun HomeScreen(
         uri?.let {
             val resolved = FileTypeResolver.resolve(context, it)
             viewModel.openResolvedFile(resolved, autoNavigate = false)
-            when (resolved.fileType) {
-                CadFileType.STL -> onNavigateToStlViewer()
-                CadFileType.DXF, CadFileType.DWG -> onNavigateToDxfViewer()
-                CadFileType.TOOLPATH_GCODE -> onNavigateToProgramViewer()
+            when {
+                resolved.fileType.is3DModel -> onNavigateToStlViewer()
+                resolved.fileType == CadFileType.DXF || resolved.fileType == CadFileType.DWG -> onNavigateToDxfViewer()
+                else -> onNavigateToProgramViewer()
             }
         }
     }
@@ -259,8 +259,8 @@ fun HomeScreen(
                         onClick = { filePicker.launch(arrayOf("*/*")) }
                     )
                     ActionTile(
-                        title = "STL Viewer",
-                        subtitle = "3D Mesh (.stl)",
+                        title = "3D Viewer",
+                        subtitle = "STL, OBJ, RLF, ART, 3DXML, Aspire",
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFFFD700),
                         modifier = Modifier.weight(1f),
@@ -554,7 +554,7 @@ fun HomeScreen(
                             .clickable {
                                 viewModel.openUri(android.net.Uri.parse(item.uriString), item.name)
                                 when (item.fileType) {
-                                    "STL" -> onNavigateToStlViewer()
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> onNavigateToStlViewer()
                                     "DXF", "DWG" -> onNavigateToDxfViewer()
                                     else -> onNavigateToProgramViewer()
                                 }
@@ -570,13 +570,13 @@ fun HomeScreen(
                         ) {
                             Icon(
                                 imageVector = when (item.fileType) {
-                                    "STL" -> Icons.Default.ViewInAr
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Icons.Default.ViewInAr
                                     "DXF", "DWG" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },
                                 contentDescription = null,
                                 tint = when (item.fileType) {
-                                    "STL" -> Color(0xFFFFD700)
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Color(0xFFFFD700)
                                     "DXF", "DWG" -> Color(0xFF10B981)
                                     else -> Color(0xFF00E5FF)
                                 },

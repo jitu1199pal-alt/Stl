@@ -4,14 +4,19 @@ import android.content.Context
 import android.net.Uri
 import com.example.data.db.AppDatabase
 import com.example.data.db.RecentFileEntity
+import com.example.data.parser.ArtcamReliefParser
+import com.example.data.parser.AspireReliefParser
 import com.example.data.parser.DwgParser
 import com.example.data.parser.DxfModel
 import com.example.data.parser.DxfParser
 import com.example.data.parser.GCodeParser
+import com.example.data.parser.ObjParser
 import com.example.data.parser.SampleDataGenerator
 import com.example.data.parser.StlModel
 import com.example.data.parser.StlParser
+import com.example.data.parser.ThreeDXmlParser
 import com.example.data.parser.ToolpathModel
+import com.example.util.CadFileType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -39,16 +44,35 @@ class FileRepository(private val context: Context) {
         model
     }
 
-    suspend fun parseStlFromUri(uri: Uri, name: String): StlModel = withContext(Dispatchers.IO) {
+    suspend fun parseStlFromUri(uri: Uri, name: String): StlModel =
+        parse3DModelFromUri(uri, name, CadFileType.STL)
+
+    suspend fun parse3DModelFromUri(uri: Uri, name: String, fileType: CadFileType = CadFileType.STL): StlModel = withContext(Dispatchers.IO) {
         val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            StlParser.parse(name, inputStream)
+            when (fileType) {
+                CadFileType.OBJ -> ObjParser.parse(name, inputStream)
+                CadFileType.RLF, CadFileType.ART -> ArtcamReliefParser.parse(name, inputStream)
+                CadFileType.XML3D -> ThreeDXmlParser.parse(name, inputStream)
+                CadFileType.ASPIRE_3D -> AspireReliefParser.parse(name, inputStream)
+                CadFileType.STL -> StlParser.parse(name, inputStream)
+                else -> {
+                    val lower = name.lowercase()
+                    when {
+                        lower.endsWith(".obj") -> ObjParser.parse(name, inputStream)
+                        lower.endsWith(".rlf") || lower.endsWith(".art") -> ArtcamReliefParser.parse(name, inputStream)
+                        lower.endsWith(".3dxml") -> ThreeDXmlParser.parse(name, inputStream)
+                        lower.endsWith(".crv") || lower.endsWith(".crv3d") || lower.endsWith(".v3m") || lower.endsWith(".3dclip") -> AspireReliefParser.parse(name, inputStream)
+                        else -> StlParser.parse(name, inputStream)
+                    }
+                }
+            }
         } ?: StlParser.parse(name, SampleDataGenerator.getSampleStlAscii().byteInputStream())
 
         recentDao.insertRecentFile(
             RecentFileEntity(
                 name = name,
                 uriString = uri.toString(),
-                fileType = "STL",
+                fileType = fileType.badge,
                 sizeBytes = 0L,
                 lineOrFaceCount = model.faceCount
             )

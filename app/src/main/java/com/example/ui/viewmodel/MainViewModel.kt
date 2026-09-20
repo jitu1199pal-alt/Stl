@@ -89,15 +89,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                when (info.fileType) {
-                    CadFileType.STL -> {
-                        val stl = repository.parseStlFromUri(info.uri, info.fileName)
+                when {
+                    info.fileType.is3DModel -> {
+                        val stl = repository.parse3DModelFromUri(info.uri, info.fileName, info.fileType)
                         _activeModel.value = ActiveModel.STL(stl)
                         if (autoNavigate) {
                             _pendingDestination.value = "stl_viewer"
                         }
                     }
-                    CadFileType.DXF, CadFileType.DWG -> {
+                    info.fileType == CadFileType.DXF || info.fileType == CadFileType.DWG -> {
                         val dxf = repository.parseDxfFromUri(info.uri, info.fileName)
                         _activeModel.value = ActiveModel.DXF(dxf)
                         _dxfVisibleLayers.value = dxf.layers.toSet()
@@ -105,7 +105,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _pendingDestination.value = "dxf_viewer"
                         }
                     }
-                    CadFileType.TOOLPATH_GCODE -> {
+                    else -> {
                         val gcode = repository.parseGCodeFromUri(info.uri, info.fileName)
                         _activeModel.value = ActiveModel.GCode(gcode)
                         resetSimulation()
