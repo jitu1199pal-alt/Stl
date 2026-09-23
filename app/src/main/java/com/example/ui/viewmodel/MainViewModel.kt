@@ -207,6 +207,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadNashikShivalayDwg() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val dwg = repository.loadNashikShivalayDwg()
+                _activeModel.value = ActiveModel.DXF(dwg)
+                _dxfVisibleLayers.value = dwg.layers.toSet()
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun loadSampleExcel() {
         viewModelScope.launch {
             _isLoading.value = true

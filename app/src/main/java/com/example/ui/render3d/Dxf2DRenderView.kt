@@ -45,7 +45,7 @@ fun Dxf2DRenderView(
     val textPaint = remember {
         Paint().apply {
             isAntiAlias = true
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
         }
     }
     val bitmapPaint = remember {
@@ -128,7 +128,7 @@ fun Dxf2DRenderView(
                 return when {
                     upper.contains("RED") || upper.contains("DIM") || upper.contains("TITLE") -> Color(0xFFEF4444)
                     upper.contains("BLUE") || upper.contains("FRAME") || upper.contains("BOUND") -> Color(0xFF3B82F6)
-                    upper.contains("WHITE") || upper.contains("GEOM") || upper.contains("TORAN") || upper.contains("PILLAR") -> Color(0xFFFFFFFF)
+                    upper.contains("WHITE") || upper.contains("GEOM") || upper.contains("TORAN") || upper.contains("PILLAR") || upper.contains("CIRCLE") -> Color(0xFFFFFFFF)
                     upper.contains("CYAN") -> Color(0xFF00E5FF)
                     upper.contains("YELLOW") -> Color(0xFFFFD700)
                     upper.contains("GREEN") -> Color(0xFF10B981)
@@ -158,7 +158,7 @@ fun Dxf2DRenderView(
                 }
             }
 
-            val strokeWidthPx = (1.8f * cameraState.zoom).coerceIn(1.2f, 4.8f)
+            val strokeWidthPx = (1.5f * (cameraState.zoom / 1.5f).coerceIn(0.7f, 1.8f)).coerceIn(1.2f, 2.8f)
 
             // Select active bitmap based on cadViewMode
             val activeBitmap = when (cadViewMode) {
@@ -275,7 +275,7 @@ fun Dxf2DRenderView(
                     }
                     is DxfEntity.TextEntity -> {
                         cameraState.projectFast(entity.position.x, entity.position.y, entity.position.z, fastTransform, p1Arr)
-                        val fontSizePx = (entity.height * fastTransform.finalScale).coerceIn(12f, 48f)
+                        val fontSizePx = (entity.height * fastTransform.finalScale).coerceIn(6f, 320f)
                         textPaint.textSize = fontSizePx
                         textPaint.color = color.toArgb()
                         drawContext.canvas.nativeCanvas.drawText(entity.text, p1Arr[0], p1Arr[1], textPaint)

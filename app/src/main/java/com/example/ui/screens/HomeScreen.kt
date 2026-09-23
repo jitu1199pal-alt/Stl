@@ -336,7 +336,7 @@ fun HomeScreen(
                 ) {
                     ActionTile(
                         title = "3. AutoCAD Drawing",
-                        subtitle = "CAD Drawing (.dxf .dwg)",
+                        subtitle = "CAD Vector (.dwg .dxf)",
                         icon = Icons.Default.Layers,
                         accentColor = Color(0xFF10B981),
                         modifier = Modifier.weight(1f),
@@ -560,6 +560,32 @@ fun HomeScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
+                            viewModel.loadNashikShivalayDwg()
+                            onNavigateToDxfViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("🏛️ Nashik Shivalay Toran (.dwg)", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.loadSampleDxf()
+                            onNavigateToDxfViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Flange (.dxf)", fontSize = 10.sp, color = Color(0xFF10B981))
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
                             viewModel.loadSampleGCode()
                             onNavigateToProgramViewer()
                         },
@@ -577,16 +603,6 @@ fun HomeScreen(
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Text("Bracket (.stl)", fontSize = 10.sp, color = Color(0xFFFFD700))
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.loadSampleDxf()
-                            onNavigateToDxfViewer()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Flange (.dxf)", fontSize = 10.sp, color = Color(0xFF10B981))
                     }
                 }
                 Spacer(modifier = Modifier.height(6.dp))

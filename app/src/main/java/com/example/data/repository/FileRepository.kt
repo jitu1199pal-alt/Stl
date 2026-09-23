@@ -136,6 +136,20 @@ class FileRepository(private val context: Context) {
         DxfParser.parse("cnc_bracket_plate.dxf", sampleText)
     }
 
+    suspend fun loadNashikShivalayDwg(): DxfModel = withContext(Dispatchers.IO) {
+        val model = DwgParser.createNashikShivalayModel("Nashik_Shivalay_Pillar_Plan.dwg")
+        recentDao.insertRecentFile(
+            RecentFileEntity(
+                name = "Nashik_Shivalay_Pillar_Plan.dwg",
+                uriString = "sample://nashik_shivalay_dwg",
+                fileType = "DWG",
+                sizeBytes = 0L,
+                lineOrFaceCount = model.entities.size
+            )
+        )
+        model
+    }
+
     suspend fun parseExcelFromUri(uri: Uri, name: String): ExcelModel = withContext(Dispatchers.IO) {
         val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
             ExcelParser.parse(name, inputStream)
