@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,15 +28,27 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
@@ -44,28 +57,28 @@ import androidx.compose.material.icons.filled.TableRows
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.WrapText
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -76,18 +89,44 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.parser.ExcelRow
+import com.example.data.parser.ExcelSheet
 import com.example.ui.viewmodel.ActiveModel
 import com.example.ui.viewmodel.MainViewModel
 import com.example.util.FileTypeResolver
+
+/**
+ * Converts 0-indexed column integer to Excel letters:
+ * 0 -> A, 1 -> B, 25 -> Z, 26 -> AA, 27 -> AB...
+ */
+fun getExcelColumnName(index: Int): String {
+    var col = index
+    val sb = StringBuilder()
+    while (col >= 0) {
+        val rem = col % 26
+        sb.insert(0, ('A'.code + rem).toChar())
+        col = (col / 26) - 1
+    }
+    return sb.toString()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,21 +135,58 @@ fun ExcelViewerScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val activeModel by viewModel.activeModel.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
 
+    // If no excel model is currently open, initialize with a standard blank workbook
+    LaunchedEffect(activeModel) {
+        if (activeModel !is ActiveModel.Excel && !isLoading) {
+            viewModel.createBlankExcelWorkbook()
+        }
+    }
+
     val excelModel = (activeModel as? ActiveModel.Excel)?.model
+    val sheets = excelModel?.sheets ?: emptyList()
 
     var selectedSheetIndex by remember { mutableIntStateOf(0) }
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCellInfo by remember { mutableStateOf<Triple<Int, Int, String>?>(null) } // rowIndex, colIndex, cellValue
+    // Ensure selected sheet index is always within bounds
+    LaunchedEffect(sheets.size) {
+        if (selectedSheetIndex >= sheets.size) {
+            selectedSheetIndex = (sheets.size - 1).coerceAtLeast(0)
+        }
+    }
 
-    // Zoom and Stretch controls
+    val currentSheet = sheets.getOrNull(selectedSheetIndex)
+
+    // Active Selected Cell (1-based rowIndex, 0-based colIndex) - Defaults to A1 as in Excel
+    var selectedRowIndex by remember { mutableIntStateOf(1) }
+    var selectedColIndex by remember { mutableIntStateOf(0) }
+
+    // Formula bar text state
+    var formulaText by remember { mutableStateOf("") }
+    val formulaFocusRequester = remember { FocusRequester() }
+
+    // Sync formula bar whenever selected cell changes
+    LaunchedEffect(selectedSheetIndex, selectedRowIndex, selectedColIndex, currentSheet) {
+        val row = currentSheet?.rows?.find { it.rowIndex == selectedRowIndex }
+        val cellVal = row?.cells?.getOrNull(selectedColIndex) ?: ""
+        formulaText = cellVal
+    }
+
+    // Interactive sizing & Zoom controls (matching user's request)
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
-    var columnWidthDp by remember { mutableFloatStateOf(150f) }
-    var rowHeightDp by remember { mutableFloatStateOf(38f) }
+    var columnWidthDp by remember { mutableFloatStateOf(88f) }
+    var rowHeightDp by remember { mutableFloatStateOf(26f) }
     var isWrapTextEnabled by remember { mutableStateOf(false) }
-    var showStretchPanel by remember { mutableStateOf(false) }
+    var showResizeToolbar by remember { mutableStateOf(false) }
+
+    // Dialogs for sheet actions
+    var showAddSheetDialog by remember { mutableStateOf(false) }
+    var newSheetNameInput by remember { mutableStateOf("") }
+    var sheetContextMenuIndex by remember { mutableStateOf<Int?>(null) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameSheetInput by remember { mutableStateOf("") }
 
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -121,51 +197,62 @@ fun ExcelViewerScreen(
         }
     }
 
+    val activeCellName = "${getExcelColumnName(selectedColIndex)}$selectedRowIndex"
+
+    // Excel Colors Palette (Authentic Microsoft Excel style)
+    val excelBrandGreen = Color(0xFF107C41)
+    val excelDarkGreen = Color(0xFF0B5A2F)
+    val formulaBarBg = Color(0xFFF3F2F1)
+    val borderLightGray = Color(0xFFD4D4D4)
+    val headerGray = Color(0xFFEFEFEF)
+    val headerSelectedBg = Color(0xFFD6EADF) // subtle green tint on active row/col header
+    val cellTextDark = Color(0xFF201F1E)
+    val statusBarBg = Color(0xFFF3F2F1)
+    val tabBg = Color(0xFFE8E8E8)
+    val activeTabBg = Color(0xFFFFFFFF)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0E17))
+            .background(Color(0xFFFFFFFF))
     ) {
-        // Top App Bar
+        // 1. TOP APP BAR (Professional Excel Theme)
         TopAppBar(
             title = {
-                Column {
-                    val fileName = excelModel?.fileName ?: "Excel Spreadsheet"
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color.White, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
                         Text(
-                            text = fileName,
+                            text = "XLSX",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = excelBrandGreen
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = excelModel?.fileName ?: "Book1.xlsx",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = Color.White,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "EXCEL / CSV",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
+                        val totalSheets = sheets.size
+                        Text(
+                            text = "$totalSheets Sheet(s) • Zoom ${(zoomScale * 100).toInt()}% • Cell $activeCellName",
+                            fontSize = 11.sp,
+                            color = Color(0xFFE2E8F0)
+                        )
                     }
-                    val sheetCount = excelModel?.sheets?.size ?: 0
-                    val rowCount = excelModel?.totalRows ?: 0
-                    Text(
-                        text = "$sheetCount Sheet(s) • $rowCount Rows • Zoom ${(zoomScale * 100).toInt()}% • Col ${columnWidthDp.toInt()}dp",
-                        fontSize = 11.sp,
-                        color = Color(0xFF94A3B8)
-                    )
                 }
             },
             navigationIcon = {
-                IconButton(onClick = onBack) {
+                IconButton(onClick = onBack, modifier = Modifier.testTag("excel_back_btn")) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
@@ -174,563 +261,807 @@ fun ExcelViewerScreen(
                 }
             },
             actions = {
-                // Toggle Stretch & Zoom controls
-                IconButton(onClick = { showStretchPanel = !showStretchPanel }) {
+                // Toggle Row & Column stretch size toolbar
+                IconButton(
+                    onClick = { showResizeToolbar = !showResizeToolbar },
+                    modifier = Modifier.testTag("excel_toggle_resize_btn")
+                ) {
                     Icon(
                         Icons.Default.Tune,
-                        contentDescription = "Zoom & Stretch Settings",
-                        tint = if (showStretchPanel) Color(0xFF10B981) else Color.White
+                        contentDescription = "Resize Columns & Rows",
+                        tint = if (showResizeToolbar) Color(0xFFFFD700) else Color.White
                     )
                 }
-                IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
+
+                // Open File button
+                IconButton(
+                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                    modifier = Modifier.testTag("excel_open_file_btn")
+                ) {
                     Icon(
                         Icons.Default.FileOpen,
                         contentDescription = "Open Excel",
-                        tint = Color(0xFF10B981)
+                        tint = Color.White
                     )
                 }
             },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF131D2F))
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = excelBrandGreen)
         )
 
-        if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color(0xFF10B981))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Loading Spreadsheet...", color = Color.White, fontSize = 13.sp)
-                }
-            }
-        } else if (excelModel == null || excelModel.sheets.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    Icon(
-                        Icons.Default.TableChart,
-                        contentDescription = null,
-                        tint = Color(0xFF10B981),
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "No Excel / CSV File Loaded",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Open any .xlsx, .xls or .csv spreadsheet from WhatsApp or storage",
-                        fontSize = 12.sp,
-                        color = Color(0xFF94A3B8)
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = { viewModel.loadSampleExcel() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF047857))
-                        ) {
-                            Text("Load Sample Cutting List", color = Color.White)
-                        }
-                        Button(
-                            onClick = { filePicker.launch(arrayOf("*/*")) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
-                        ) {
-                            Text("Open File", color = Color.Black, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        } else {
-            val sheets = excelModel.sheets
-            val currentSheet = sheets.getOrNull(selectedSheetIndex) ?: sheets.first()
-
-            // Sheet selector tabs if multiple sheets exist
-            if (sheets.size > 1) {
-                ScrollableTabRow(
-                    selectedTabIndex = selectedSheetIndex.coerceIn(0, sheets.size - 1),
-                    containerColor = Color(0xFF1E293B),
-                    contentColor = Color(0xFF10B981),
-                    edgePadding = 12.dp,
-                    indicator = { tabPositions ->
-                        if (selectedSheetIndex < tabPositions.size) {
-                            TabRowDefaults.SecondaryIndicator(
-                                Modifier.tabIndicatorOffset(tabPositions[selectedSheetIndex]),
-                                color = Color(0xFF10B981)
-                            )
-                        }
-                    }
-                ) {
-                    sheets.forEachIndexed { idx, sheet ->
-                        Tab(
-                            selected = selectedSheetIndex == idx,
-                            onClick = {
-                                selectedSheetIndex = idx
-                                selectedCellInfo = null
-                            },
-                            text = {
-                                Text(
-                                    text = "${sheet.name} (${sheet.rows.size})",
-                                    fontWeight = if (selectedSheetIndex == idx) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedSheetIndex == idx) Color(0xFF10B981) else Color(0xFF94A3B8),
-                                    fontSize = 12.sp
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
-            // Quick Control Bar (Zoom + Column Width + Row Height + Wrap Text)
-            Card(
+        // 2. EXCEL FORMULA BAR (Exact match to sheet1.png)
+        Surface(
+            color = formulaBarBg,
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF162032)),
-                shape = RoundedCornerShape(10.dp)
+                    .height(38.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    // Row 1: Search & Quick Toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search cells...", fontSize = 11.sp, color = Color(0xFF64748B)) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Clear, contentDescription = "Clear", tint = Color(0xFF94A3B8), modifier = Modifier.size(14.dp))
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF10B981),
-                                unfocusedBorderColor = Color(0xFF334155),
-                                focusedContainerColor = Color(0xFF0F172A),
-                                unfocusedContainerColor = Color(0xFF0F172A)
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(8.dp)
+                // Name Box (e.g. "A1", "B4")
+                Row(
+                    modifier = Modifier
+                        .width(62.dp)
+                        .fillMaxHeight()
+                        .background(Color.White, RoundedCornerShape(2.dp))
+                        .border(1.dp, borderLightGray, RoundedCornerShape(2.dp))
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = activeCellName,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = cellTextDark
+                    )
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = Color(0xFF605E5C),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+
+                // Vertical Divider
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 6.dp)
+                        .width(1.dp)
+                        .height(20.dp)
+                        .background(Color(0xFFC8C6C4))
+                )
+
+                // Cancel Button (X)
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable {
+                            // Reset formula text to original cell value
+                            val originalVal = currentSheet?.rows?.find { it.rowIndex == selectedRowIndex }
+                                ?.cells?.getOrNull(selectedColIndex) ?: ""
+                            formulaText = originalVal
+                            keyboardController?.hide()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Clear,
+                        contentDescription = "Cancel edit",
+                        tint = Color(0xFFD83B01),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // Enter / Commit Button (checkmark)
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable {
+                            viewModel.updateExcelCell(
+                                sheetIndex = selectedSheetIndex,
+                                rowIndex = selectedRowIndex,
+                                colIndex = selectedColIndex,
+                                newValue = formulaText
+                            )
+                            keyboardController?.hide()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Commit edit",
+                        tint = excelBrandGreen,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // fx Icon
+                Text(
+                    text = "fx",
+                    fontSize = 14.sp,
+                    fontStyle = FontStyle.Italic,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF605E5C),
+                    modifier = Modifier.padding(horizontal = 6.dp)
+                )
+
+                // Formula / Cell Content Input Field (Full width)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color.White, RoundedCornerShape(2.dp))
+                        .border(1.dp, borderLightGray, RoundedCornerShape(2.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    BasicTextField(
+                        value = formulaText,
+                        onValueChange = { formulaText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(formulaFocusRequester)
+                            .testTag("excel_formula_input"),
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            fontSize = 12.5.sp,
+                            color = cellTextDark,
+                            fontFamily = FontFamily.Default
+                        ),
+                        cursorBrush = SolidColor(excelBrandGreen),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                viewModel.updateExcelCell(
+                                    sheetIndex = selectedSheetIndex,
+                                    rowIndex = selectedRowIndex,
+                                    colIndex = selectedColIndex,
+                                    newValue = formulaText
+                                )
+                                keyboardController?.hide()
+                            }
                         )
+                    )
+                }
+            }
+        }
 
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Wrap Text Toggle Button
-                        Button(
-                            onClick = { isWrapTextEnabled = !isWrapTextEnabled },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isWrapTextEnabled) Color(0xFF10B981) else Color(0xFF1E293B)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                            modifier = Modifier.height(44.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.WrapText,
-                                contentDescription = "Wrap Text",
-                                tint = if (isWrapTextEnabled) Color.Black else Color(0xFF94A3B8),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isWrapTextEnabled) "Wrap ON" else "Wrap OFF",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isWrapTextEnabled) Color.Black else Color.White
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Row 2: Zoom & Stretch Interactive Controls
+        // 3. COLUMN & ROW RESIZE STRIP (coloum or rows ko kam jayada size karne ka vesa hi rakhna)
+        AnimatedVisibility(visible = showResizeToolbar) {
+            Surface(
+                color = Color(0xFFF9FAFB),
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. ZOOM Controls
+                        // COLUMN WIDTH ADJUSTMENT: [-] width [+]
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+                                .background(Color.White, RoundedCornerShape(6.dp))
+                                .border(1.dp, borderLightGray, RoundedCornerShape(6.dp))
                                 .padding(horizontal = 4.dp, vertical = 2.dp)
                         ) {
+                            Icon(
+                                Icons.Default.ViewColumn,
+                                contentDescription = null,
+                                tint = excelBrandGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Col Width:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = cellTextDark)
+                            Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
-                                onClick = { zoomScale = (zoomScale - 0.15f).coerceIn(0.5f, 3.0f) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { columnWidthDp = (columnWidthDp - 15f).coerceIn(45f, 350f) },
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = Color(0xFF10B981), modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Remove, contentDescription = "Narrow Column", tint = excelBrandGreen, modifier = Modifier.size(14.dp))
                             }
                             Text(
-                                text = "${(zoomScale * 100).toInt()}%",
+                                text = "${columnWidthDp.toInt()}dp",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier
-                                    .clickable { zoomScale = 1.0f }
-                                    .padding(horizontal = 4.dp)
+                                color = excelBrandGreen,
+                                modifier = Modifier.padding(horizontal = 4.dp)
                             )
                             IconButton(
-                                onClick = { zoomScale = (zoomScale + 0.15f).coerceIn(0.5f, 3.0f) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { columnWidthDp = (columnWidthDp + 15f).coerceIn(45f, 350f) },
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = Color(0xFF10B981), modifier = Modifier.size(14.dp))
+                                Icon(Icons.Default.Add, contentDescription = "Widen Column", tint = excelBrandGreen, modifier = Modifier.size(14.dp))
                             }
                         }
 
-                        // 2. COLUMN WIDTH STRETCH Controls
+                        // ROW HEIGHT ADJUSTMENT: [-] height [+]
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+                                .background(Color.White, RoundedCornerShape(6.dp))
+                                .border(1.dp, borderLightGray, RoundedCornerShape(6.dp))
                                 .padding(horizontal = 4.dp, vertical = 2.dp)
                         ) {
-                            Icon(Icons.Default.ViewColumn, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                Icons.Default.TableRows,
+                                contentDescription = null,
+                                tint = Color(0xFFD97706),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Row Height:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = cellTextDark)
+                            Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
-                                onClick = { columnWidthDp = (columnWidthDp - 25f).coerceIn(60f, 450f) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { rowHeightDp = (rowHeightDp - 4f).coerceIn(18f, 120f) },
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Narrow Column", tint = Color.White, modifier = Modifier.size(12.dp))
+                                Icon(Icons.Default.Remove, contentDescription = "Shorten Row", tint = Color(0xFFD97706), modifier = Modifier.size(14.dp))
                             }
                             Text(
-                                text = "${columnWidthDp.toInt()}w",
-                                fontSize = 10.sp,
+                                text = "${rowHeightDp.toInt()}dp",
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF38BDF8),
-                                modifier = Modifier.padding(horizontal = 2.dp)
+                                color = Color(0xFFD97706),
+                                modifier = Modifier.padding(horizontal = 4.dp)
                             )
                             IconButton(
-                                onClick = { columnWidthDp = (columnWidthDp + 25f).coerceIn(60f, 450f) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { rowHeightDp = (rowHeightDp + 4f).coerceIn(18f, 120f) },
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = "Widen Column", tint = Color.White, modifier = Modifier.size(12.dp))
+                                Icon(Icons.Default.Add, contentDescription = "Tall Row", tint = Color(0xFFD97706), modifier = Modifier.size(14.dp))
                             }
                         }
+                    }
 
-                        // 3. ROW HEIGHT STRETCH Controls
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Secondary row: Wrap text toggle, Sample data, Reset
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { isWrapTextEnabled = !isWrapTextEnabled },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isWrapTextEnabled) excelBrandGreen else Color(0xFFE5E7EB)
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.TableRows, contentDescription = null, tint = Color(0xFFFBBF24), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            IconButton(
-                                onClick = { rowHeightDp = (rowHeightDp - 8f).coerceIn(26f, 150f) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Remove, contentDescription = "Shorten Row", tint = Color.White, modifier = Modifier.size(12.dp))
-                            }
-                            Text(
-                                text = "${rowHeightDp.toInt()}h",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFBBF24),
-                                modifier = Modifier.padding(horizontal = 2.dp)
+                            Icon(
+                                Icons.Default.WrapText,
+                                contentDescription = null,
+                                tint = if (isWrapTextEnabled) Color.White else cellTextDark,
+                                modifier = Modifier.size(14.dp)
                             )
-                            IconButton(
-                                onClick = { rowHeightDp = (rowHeightDp + 8f).coerceIn(26f, 150f) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = "Stretch Row", tint = Color.White, modifier = Modifier.size(12.dp))
-                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isWrapTextEnabled) "Wrap Text ON" else "Wrap Text OFF",
+                                fontSize = 11.sp,
+                                color = if (isWrapTextEnabled) Color.White else cellTextDark,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
 
-                        // Reset View Button
-                        IconButton(
+                        Button(
                             onClick = {
+                                columnWidthDp = 88f
+                                rowHeightDp = 26f
                                 zoomScale = 1.0f
-                                columnWidthDp = 150f
-                                rowHeightDp = 38f
                                 isWrapTextEnabled = false
                             },
-                            modifier = Modifier.size(28.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE5E7EB)),
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.RestartAlt, contentDescription = "Reset", tint = Color(0xFF94A3B8), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.RestartAlt, contentDescription = null, tint = cellTextDark, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Standard Size", fontSize = 11.sp, color = cellTextDark)
                         }
-                    }
 
-                    // Detailed Stretch & Zoom Sliders (Collapsible)
-                    AnimatedVisibility(visible = showStretchPanel) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .background(Color(0xFF0B111E), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, Color(0xFF1E293B), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        TextButton(
+                            onClick = { viewModel.loadSampleExcel() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            // Zoom Slider
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Zoom: ${(zoomScale * 100).toInt()}%", fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
-                                Slider(
-                                    value = zoomScale,
-                                    onValueChange = { zoomScale = it },
-                                    valueRange = 0.5f..2.5f,
-                                    modifier = Modifier.weight(1f),
-                                    colors = SliderDefaults.colors(thumbColor = Color(0xFF10B981), activeTrackColor = Color(0xFF10B981))
-                                )
-                            }
-
-                            // Column Width Slider
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Col Width: ${columnWidthDp.toInt()}dp", fontSize = 11.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
-                                Slider(
-                                    value = columnWidthDp,
-                                    onValueChange = { columnWidthDp = it },
-                                    valueRange = 70f..400f,
-                                    modifier = Modifier.weight(1f),
-                                    colors = SliderDefaults.colors(thumbColor = Color(0xFF38BDF8), activeTrackColor = Color(0xFF38BDF8))
-                                )
-                            }
-
-                            // Row Height Slider
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Row H: ${rowHeightDp.toInt()}dp", fontSize = 11.sp, color = Color(0xFFFBBF24), fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
-                                Slider(
-                                    value = rowHeightDp,
-                                    onValueChange = { rowHeightDp = it },
-                                    valueRange = 26f..120f,
-                                    modifier = Modifier.weight(1f),
-                                    colors = SliderDefaults.colors(thumbColor = Color(0xFFFBBF24), activeTrackColor = Color(0xFFFBBF24))
-                                )
-                            }
-
-                            // Presets Row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FilterChip(
-                                    selected = columnWidthDp == 100f,
-                                    onClick = { columnWidthDp = 100f; rowHeightDp = 30f },
-                                    label = { Text("Compact", fontSize = 10.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(labelColor = Color.White)
-                                )
-                                FilterChip(
-                                    selected = columnWidthDp == 160f,
-                                    onClick = { columnWidthDp = 160f; rowHeightDp = 40f },
-                                    label = { Text("Standard", fontSize = 10.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(labelColor = Color.White)
-                                )
-                                FilterChip(
-                                    selected = columnWidthDp == 260f,
-                                    onClick = { columnWidthDp = 260f; rowHeightDp = 56f },
-                                    label = { Text("Extra Wide", fontSize = 10.sp) },
-                                    colors = FilterChipDefaults.filterChipColors(labelColor = Color.White)
-                                )
-                            }
+                            Text("Load Cutting List", fontSize = 11.sp, color = excelBrandGreen, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
+        }
 
-            // Filter rows based on search
-            val filteredRows = remember(currentSheet, searchQuery) {
-                if (searchQuery.isBlank()) {
-                    currentSheet.rows
-                } else {
-                    currentSheet.rows.filterIndexed { index, row ->
-                        index == 0 || row.cells.any { it.contains(searchQuery, ignoreCase = true) }
+        // 4. MAIN EXCEL SPREADSHEET GRID (Exact visual fidelity to sheet1.png)
+        val sheetRows = currentSheet?.rows ?: emptyList()
+        // Ensure at least 35 rows and 15 columns are displayed just like a real Excel sheet
+        val totalDisplayRows = maxOf(sheetRows.size, 35)
+        val totalDisplayCols = maxOf(currentSheet?.columnCount ?: 10, 15)
+
+        // Dynamic scaled dimensions based on user stretch & zoom scale
+        val scaledColWidth = (columnWidthDp * zoomScale).coerceAtLeast(35f).dp
+        val scaledRowHeight = (rowHeightDp * zoomScale).coerceAtLeast(18f).dp
+        val scaledRowNumWidth = (38f * zoomScale).coerceIn(30f, 65f).dp
+        val cellFontSize = (11f * zoomScale).coerceIn(7f, 22f).sp
+        val headerFontSize = (11f * zoomScale).coerceIn(8f, 22f).sp
+
+        val horizontalScrollState = rememberScrollState()
+        val verticalScrollState = rememberLazyListState()
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(Color.White)
+                // Pinch-to-zoom gesture on the spreadsheet page (page zoom in / zoom out)
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        zoomScale = (zoomScale * zoom).coerceIn(0.5f, 2.5f)
                     }
                 }
-            }
-
-            val maxCols = currentSheet.columnCount.coerceAtLeast(1)
-            val horizontalScrollState = rememberScrollState()
-
-            // Scaled dynamic dimensions
-            val cellWidth = (columnWidthDp * zoomScale).dp
-            val cellHeight = (rowHeightDp * zoomScale).dp
-            val rowNumWidth = (44f * zoomScale).coerceIn(34f, 80f).dp
-            val fontSize = (((if (isWrapTextEnabled) 11f else 11.5f) * zoomScale).coerceIn(8f, 26f)).sp
-            val headerFontSize = ((12f * zoomScale).coerceIn(9f, 28f)).sp
-            val cellPaddingHorizontal = (8f * zoomScale).coerceIn(4f, 16f).dp
-
-            // Spreadsheet Tabular Grid with Pinch-to-Zoom Gesture Support
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoom, _ ->
-                            zoomScale = (zoomScale * zoom).coerceIn(0.5f, 3.0f)
-                        }
-                    }
-                    .horizontalScroll(horizontalScrollState)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 90.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // A. FIXED COLUMN HEADERS ROW (A, B, C, D, E, F, G, H, I...)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(scaledRowHeight)
+                        .background(headerGray)
+                        .border(width = 0.8.dp, color = borderLightGray)
                 ) {
-                    itemsIndexed(filteredRows) { rowIndex, row ->
-                        val isHeaderRow = (rowIndex == 0 && searchQuery.isBlank())
-                        Row(
-                            modifier = Modifier
-                                .background(
-                                    when {
-                                        isHeaderRow -> Color(0xFF064E3B)
-                                        rowIndex % 2 == 1 -> Color(0xFF131D2F)
-                                        else -> Color(0xFF0F172A)
-                                    }
-                                )
-                                .border(0.5.dp, Color(0xFF1E293B)),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Row Number column
+                    // Top-Left Corner Box (Triangle select-all box)
+                    Box(
+                        modifier = Modifier
+                            .width(scaledRowNumWidth)
+                            .fillMaxHeight()
+                            .background(headerGray)
+                            .border(width = 0.8.dp, color = borderLightGray)
+                            .clickable {
+                                selectedRowIndex = 1
+                                selectedColIndex = 0
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Diagonal triangle mark
+                        Text("◢", fontSize = 9.sp, color = Color(0xFF9E9E9E))
+                    }
+
+                    // Horizontally scrolled column headers: A, B, C, D...
+                    Row(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
+                        for (colIdx in 0 until totalDisplayCols) {
+                            val colName = getExcelColumnName(colIdx)
+                            val isColActive = selectedColIndex == colIdx
                             Box(
                                 modifier = Modifier
-                                    .width(rowNumWidth)
-                                    .then(
-                                        if (isWrapTextEnabled) Modifier.defaultMinSize(minHeight = cellHeight)
-                                        else Modifier.height(cellHeight)
-                                    )
-                                    .background(if (isHeaderRow) Color(0xFF047857) else Color(0xFF1E293B))
-                                    .border(0.5.dp, Color(0xFF334155)),
+                                    .width(scaledColWidth)
+                                    .fillMaxHeight()
+                                    .background(if (isColActive) headerSelectedBg else headerGray)
+                                    .border(width = 0.8.dp, color = borderLightGray)
+                                    .clickable {
+                                        selectedColIndex = colIdx
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (isHeaderRow) "#" else row.rowIndex.toString(),
-                                    color = if (isHeaderRow) Color.White else Color(0xFF94A3B8),
-                                    fontSize = fontSize * 0.95f,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
+                                    text = colName,
+                                    fontSize = headerFontSize,
+                                    fontWeight = if (isColActive) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isColActive) excelBrandGreen else cellTextDark,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // B. SPREADSHEET CELLS (Row numbers + Grid cells)
+                LazyColumn(
+                    state = verticalScrollState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("excel_grid_lazy_column")
+                ) {
+                    items(totalDisplayRows) { rowIdxZero ->
+                        val rowIndex = rowIdxZero + 1
+                        val isRowActive = selectedRowIndex == rowIndex
+                        val existingRow = sheetRows.find { it.rowIndex == rowIndex }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (isWrapTextEnabled) Modifier.defaultMinSize(minHeight = scaledRowHeight)
+                                    else Modifier.height(scaledRowHeight)
+                                )
+                        ) {
+                            // Row Header (1, 2, 3, 4, 5, 6...)
+                            Box(
+                                modifier = Modifier
+                                    .width(scaledRowNumWidth)
+                                    .then(
+                                        if (isWrapTextEnabled) Modifier.defaultMinSize(minHeight = scaledRowHeight)
+                                        else Modifier.height(scaledRowHeight)
+                                    )
+                                    .background(if (isRowActive) headerSelectedBg else headerGray)
+                                    .border(width = 0.8.dp, color = borderLightGray)
+                                    .clickable {
+                                        selectedRowIndex = rowIndex
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = rowIndex.toString(),
+                                    fontSize = headerFontSize,
+                                    fontWeight = if (isRowActive) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isRowActive) excelBrandGreen else cellTextDark,
                                     textAlign = TextAlign.Center
                                 )
                             }
 
-                            // Data cells
-                            for (colIdx in 0 until maxCols) {
-                                val cellValue = row.cells.getOrNull(colIdx) ?: ""
-                                val isCellSelected = selectedCellInfo?.first == row.rowIndex && selectedCellInfo?.second == colIdx
+                            // Horizontally scrolled cells in this row
+                            Row(modifier = Modifier.horizontalScroll(horizontalScrollState)) {
+                                for (colIdx in 0 until totalDisplayCols) {
+                                    val cellValue = existingRow?.cells?.getOrNull(colIdx) ?: ""
+                                    val isCellSelected = selectedRowIndex == rowIndex && selectedColIndex == colIdx
 
-                                Box(
-                                    modifier = Modifier
-                                        .width(cellWidth)
-                                        .then(
-                                            if (isWrapTextEnabled) Modifier.defaultMinSize(minHeight = cellHeight)
-                                            else Modifier.height(cellHeight)
+                                    Box(
+                                        modifier = Modifier
+                                            .width(scaledColWidth)
+                                            .then(
+                                                if (isWrapTextEnabled) Modifier.defaultMinSize(minHeight = scaledRowHeight)
+                                                else Modifier.height(scaledRowHeight)
+                                            )
+                                            .background(Color.White)
+                                            .border(
+                                                width = if (isCellSelected) 2.dp else 0.8.dp,
+                                                color = if (isCellSelected) excelBrandGreen else borderLightGray
+                                            )
+                                            .clickable {
+                                                selectedRowIndex = rowIndex
+                                                selectedColIndex = colIdx
+                                                formulaText = cellValue
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        Text(
+                                            text = cellValue,
+                                            fontSize = cellFontSize,
+                                            color = cellTextDark,
+                                            maxLines = if (isWrapTextEnabled) 8 else 1,
+                                            overflow = if (isWrapTextEnabled) TextOverflow.Clip else TextOverflow.Ellipsis
                                         )
-                                        .border(
-                                            width = if (isCellSelected) 1.5.dp else 0.5.dp,
-                                            color = if (isCellSelected) Color(0xFF10B981) else Color(0xFF334155)
-                                        )
-                                        .background(if (isCellSelected) Color(0xFF065F46) else Color.Transparent)
-                                        .clickable {
-                                            selectedCellInfo = Triple(row.rowIndex, colIdx, cellValue)
+
+                                        // Excel iconic small green fill handle square at the bottom-right of active cell
+                                        if (isCellSelected) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(5.dp)
+                                                    .background(excelBrandGreen)
+                                                    .align(Alignment.BottomEnd)
+                                            )
                                         }
-                                        .padding(horizontal = cellPaddingHorizontal, vertical = 2.dp),
-                                    contentAlignment = Alignment.CenterStart
-                                ) {
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. EXCEL SHEET TABS & (+) ADD SHEET BUTTON (Matching sheet1.png bottom bar)
+        Surface(
+            color = tabBg,
+            shadowElevation = 4.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Navigation arrows: [◀] [▶]
+                IconButton(
+                    onClick = {
+                        if (selectedSheetIndex > 0) {
+                            selectedSheetIndex--
+                            selectedRowIndex = 1
+                            selectedColIndex = 0
+                        }
+                    },
+                    enabled = selectedSheetIndex > 0,
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ChevronLeft,
+                        contentDescription = "Previous Sheet",
+                        tint = if (selectedSheetIndex > 0) Color(0xFF605E5C) else Color(0xFFBDBDBD),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        if (selectedSheetIndex < sheets.size - 1) {
+                            selectedSheetIndex++
+                            selectedRowIndex = 1
+                            selectedColIndex = 0
+                        }
+                    },
+                    enabled = selectedSheetIndex < sheets.size - 1,
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = "Next Sheet",
+                        tint = if (selectedSheetIndex < sheets.size - 1) Color(0xFF605E5C) else Color(0xFFBDBDBD),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Scrollable Sheet Tabs
+                Row(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    sheets.forEachIndexed { idx, sheet ->
+                        val isSelected = selectedSheetIndex == idx
+
+                        Box(
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(if (isSelected) activeTabBg else tabBg)
+                                .clickable {
+                                    selectedSheetIndex = idx
+                                    selectedRowIndex = 1
+                                    selectedColIndex = 0
+                                }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = cellValue,
-                                        color = when {
-                                            isHeaderRow -> Color(0xFFA7F3D0)
-                                            isCellSelected -> Color.White
-                                            else -> Color(0xFFE2E8F0)
-                                        },
-                                        fontSize = if (isHeaderRow) headerFontSize else fontSize,
-                                        fontWeight = if (isHeaderRow) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = if (isWrapTextEnabled) 10 else 1,
-                                        overflow = if (isWrapTextEnabled) TextOverflow.Clip else TextOverflow.Ellipsis
+                                        text = sheet.name,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) excelBrandGreen else Color(0xFF605E5C)
+                                    )
+                                    if (isSelected && sheets.size > 1) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clickable { sheetContextMenuIndex = idx },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.MoreVert,
+                                                contentDescription = "Sheet options",
+                                                tint = Color(0xFF605E5C),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Green underline for active tab
+                                if (isSelected) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .width(28.dp)
+                                            .height(2.5.dp)
+                                            .background(excelBrandGreen, RoundedCornerShape(1.dp))
                                     )
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Cell details footer bar when a cell is clicked
-            selectedCellInfo?.let { (rowNum, colNum, cellContent) ->
-                Card(
+                // (+) ADD SHEET BUTTON (Exact circle plus matching sheet1.png)
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                    shape = RoundedCornerShape(10.dp)
+                        .padding(start = 4.dp)
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .border(1.dp, borderLightGray, CircleShape)
+                        .clickable {
+                            // Automatically add new sheet, e.g. Sheet2, Sheet3
+                            val newIndex = viewModel.addNewExcelSheet()
+                            selectedSheetIndex = newIndex
+                            selectedRowIndex = 1
+                            selectedColIndex = 0
+                            Toast.makeText(context, "Added new Sheet", Toast.LENGTH_SHORT).show()
+                        }
+                        .testTag("excel_add_sheet_btn"),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Row $rowNum • Col ${colNum + 1}:",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF10B981),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xFF064E3B), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 1.dp)
-                                ) {
-                                    Text("Selected Cell", fontSize = 9.sp, color = Color(0xFFA7F3D0))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = cellContent.ifEmpty { "(Empty Cell)" },
-                                fontSize = 13.sp,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 4,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add New Sheet",
+                        tint = excelBrandGreen,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
 
-                        // Copy Cell Value Button
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                val clip = ClipData.newPlainText("Cell Content", cellContent)
-                                clipboard?.setPrimaryClip(clip)
-                                Toast.makeText(context, "Copied cell text", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF10B981))
-                        }
+                Spacer(modifier = Modifier.weight(1f))
 
-                        IconButton(onClick = { selectedCellInfo = null }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                // Copy cell content shortcut
+                IconButton(
+                    onClick = {
+                        val currentVal = formulaText
+                        if (currentVal.isNotBlank()) {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            clipboard?.setPrimaryClip(ClipData.newPlainText("Excel Cell", currentVal))
+                            Toast.makeText(context, "Copied: $currentVal", Toast.LENGTH_SHORT).show()
                         }
-                    }
+                    },
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy cell",
+                        tint = Color(0xFF605E5C),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
+        }
+
+        // 6. BOTTOM STATUS BAR & ZOOM CONTROLS (Exact match to sheet1.png bottom right)
+        Surface(
+            color = statusBarBg,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .border(width = 0.5.dp, color = borderLightGray)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Left: "Ready" status and cell info
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Ready",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF605E5C)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Icon(
+                        Icons.Default.GridView,
+                        contentDescription = null,
+                        tint = Color(0xFF8A8886),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = activeCellName,
+                        fontSize = 11.sp,
+                        color = Color(0xFF605E5C),
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                // Right: Zoom In, Zoom Out, Zoom Slider, Percentage (Matching sheet1.png)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    // Zoom Out Button [-]
+                    IconButton(
+                        onClick = { zoomScale = (zoomScale - 0.10f).coerceIn(0.5f, 2.5f) },
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("excel_zoom_out_btn")
+                    ) {
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = "Zoom Out",
+                            tint = Color(0xFF605E5C),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // Zoom Slider
+                    Slider(
+                        value = zoomScale,
+                        onValueChange = { zoomScale = it },
+                        valueRange = 0.5f..2.5f,
+                        modifier = Modifier
+                            .width(90.dp)
+                            .height(20.dp)
+                            .testTag("excel_zoom_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = excelBrandGreen,
+                            activeTrackColor = excelBrandGreen,
+                            inactiveTrackColor = Color(0xFFC8C6C4)
+                        )
+                    )
+
+                    // Zoom In Button [+]
+                    IconButton(
+                        onClick = { zoomScale = (zoomScale + 0.10f).coerceIn(0.5f, 2.5f) },
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("excel_zoom_in_btn")
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Zoom In",
+                            tint = Color(0xFF605E5C),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // Zoom Percentage Badge (Click to reset to 100%)
+                    Text(
+                        text = "${(zoomScale * 100).toInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = cellTextDark,
+                        modifier = Modifier
+                            .clickable { zoomScale = 1.0f }
+                            .padding(horizontal = 4.dp)
+                            .testTag("excel_zoom_percentage_text")
+                    )
+                }
+            }
+        }
+    }
+
+    // Sheet context menu (Delete / Rename)
+    sheetContextMenuIndex?.let { sheetIdx ->
+        DropdownMenu(
+            expanded = true,
+            onDismissRequest = { sheetContextMenuIndex = null }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Delete Sheet", color = Color(0xFFD83B01)) },
+                onClick = {
+                    val nextIdx = viewModel.deleteExcelSheet(sheetIdx)
+                    selectedSheetIndex = nextIdx
+                    sheetContextMenuIndex = null
+                    Toast.makeText(context, "Deleted Sheet", Toast.LENGTH_SHORT).show()
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFD83B01))
+                },
+                enabled = sheets.size > 1
+            )
         }
     }
 }

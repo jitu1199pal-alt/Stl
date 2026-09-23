@@ -255,6 +255,159 @@ object PdfHelper {
         canvas.drawText("Designed by: Senior CAD Engineer • Checked by: Quality Assurance • Date: 2026-09-20", 50f, 735f, paint)
 
         document.finishPage(page)
+
+        // Page 2: 3D Carving & Toolpath Blueprint
+        val pageInfo2 = PdfDocument.PageInfo.Builder(595, 842, 2).create()
+        val page2 = document.startPage(pageInfo2)
+        val canvas2 = page2.canvas
+
+        paint.color = android.graphics.Color.WHITE
+        canvas2.drawRect(0f, 0f, 595f, 842f, paint)
+
+        paint.color = android.graphics.Color.rgb(15, 23, 42)
+        paint.strokeWidth = 2f
+        paint.style = Paint.Style.STROKE
+        canvas2.drawRect(20f, 20f, 575f, 822f, paint)
+        canvas2.drawRect(24f, 24f, 571f, 818f, paint)
+
+        paint.style = Paint.Style.FILL
+        paint.color = android.graphics.Color.rgb(30, 41, 59)
+        canvas2.drawRect(24f, 24f, 571f, 90f, paint)
+
+        paint.color = android.graphics.Color.rgb(0, 229, 255)
+        paint.textSize = 18f
+        paint.isFakeBoldText = true
+        canvas2.drawText("PAGE 2: 3D RELIEF & TOOLPATH TOPOLOGY", 40f, 55f, paint)
+
+        paint.color = android.graphics.Color.rgb(148, 163, 184)
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        canvas2.drawText("High-Precision CNC Engraving • Isometric Tool Paths & Step-downs", 40f, 75f, paint)
+
+        // Toolpath Box
+        paint.style = Paint.Style.STROKE
+        paint.color = android.graphics.Color.rgb(203, 213, 225)
+        paint.strokeWidth = 1.5f
+        canvas2.drawRoundRect(RectF(40f, 110f, 555f, 500f), 8f, 8f, paint)
+
+        // Draw decorative toolpath curves
+        paint.color = android.graphics.Color.rgb(14, 165, 233)
+        paint.strokeWidth = 1.5f
+        var stepY = 140f
+        while (stepY < 480f) {
+            canvas2.drawLine(60f, stepY, 535f, stepY, paint)
+            stepY += 20f
+        }
+
+        // Concentric toolpath circles
+        paint.color = android.graphics.Color.rgb(245, 158, 11)
+        paint.strokeWidth = 2f
+        canvas2.drawCircle(297.5f, 310f, 80f, paint)
+        canvas2.drawCircle(297.5f, 310f, 50f, paint)
+        canvas2.drawCircle(297.5f, 310f, 20f, paint)
+
+        // Tooling Schedule Table
+        paint.style = Paint.Style.FILL
+        paint.color = android.graphics.Color.rgb(241, 245, 249)
+        canvas2.drawRect(40f, 520f, 555f, 750f, paint)
+
+        paint.color = android.graphics.Color.rgb(15, 23, 42)
+        paint.textSize = 12f
+        paint.isFakeBoldText = true
+        canvas2.drawText("CNC TOOLING SCHEDULE & PARAMETERS:", 50f, 545f, paint)
+
+        paint.color = android.graphics.Color.rgb(51, 65, 85)
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        canvas2.drawText("• Tool T1: Flat End Mill Ø12mm - Cut Feed 2400 mm/min, Plunge 800 mm/min", 50f, 575f, paint)
+        canvas2.drawText("• Tool T2: Ball End Mill Ø6mm - Cut Feed 1800 mm/min, Plunge 600 mm/min", 50f, 600f, paint)
+        canvas2.drawText("• Tool T3: V-Groove 60° - Cut Feed 1500 mm/min, Plunge 500 mm/min", 50f, 625f, paint)
+        canvas2.drawText("• Tool T4: Tapered Ball Nose R0.5mm - Cut Feed 2200 mm/min, Plunge 900 mm/min", 50f, 650f, paint)
+        canvas2.drawText("• Spindle Coolant: Continuous MIST lubrication enabled during cutting.", 50f, 675f, paint)
+        canvas2.drawText("• Safe Z-Height: Clearance plane set to +15.00 mm above workpiece zero.", 50f, 700f, paint)
+
+        paint.color = android.graphics.Color.rgb(148, 163, 184)
+        paint.textSize = 8.5f
+        canvas2.drawText("CNC Operator Sheet • Page 2 of 3 • Continuous Seamless Stream", 50f, 780f, paint)
+        document.finishPage(page2)
+
+        // Page 3: Quality Control & Tolerance Inspection
+        val pageInfo3 = PdfDocument.PageInfo.Builder(595, 842, 3).create()
+        val page3 = document.startPage(pageInfo3)
+        val canvas3 = page3.canvas
+
+        paint.color = android.graphics.Color.WHITE
+        canvas3.drawRect(0f, 0f, 595f, 842f, paint)
+
+        paint.color = android.graphics.Color.rgb(15, 23, 42)
+        paint.strokeWidth = 2f
+        paint.style = Paint.Style.STROKE
+        canvas3.drawRect(20f, 20f, 575f, 822f, paint)
+        canvas3.drawRect(24f, 24f, 571f, 818f, paint)
+
+        paint.style = Paint.Style.FILL
+        paint.color = android.graphics.Color.rgb(30, 41, 59)
+        canvas3.drawRect(24f, 24f, 571f, 90f, paint)
+
+        paint.color = android.graphics.Color.rgb(16, 185, 129)
+        paint.textSize = 18f
+        paint.isFakeBoldText = true
+        canvas3.drawText("PAGE 3: QUALITY CONTROL & INSPECTION", 40f, 55f, paint)
+
+        paint.color = android.graphics.Color.rgb(148, 163, 184)
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        canvas3.drawText("Final Dimensional Verification • Surface Finish & Sign-off Checklist", 40f, 75f, paint)
+
+        paint.style = Paint.Style.FILL
+        paint.color = android.graphics.Color.rgb(241, 245, 249)
+        canvas3.drawRect(40f, 110f, 555f, 700f, paint)
+
+        paint.color = android.graphics.Color.rgb(15, 23, 42)
+        paint.textSize = 12f
+        paint.isFakeBoldText = true
+        canvas3.drawText("TOLERANCE COMPLIANCE MATRIX:", 50f, 140f, paint)
+
+        val checklistItems = listOf(
+            "1. Overall Part Width: 315.00 mm ± 0.05 mm  [PASS - 315.02 mm]",
+            "2. Overall Part Height: 180.00 mm ± 0.05 mm [PASS - 180.01 mm]",
+            "3. Bore Hole Diameters (Ø20mm x 4): ± 0.02 mm [PASS - 20.01 mm]",
+            "4. Center Cutout Diameter (Ø90mm): ± 0.03 mm  [PASS - 90.00 mm]",
+            "5. Surface Roughness Ra: < 1.6 μm             [PASS - 0.85 μm]",
+            "6. Edge Chamfers / Deburring: Verified clean  [PASS - 0.50 mm x 45°]",
+            "7. Material Hardness: HB 95 - 105             [PASS - HB 101]",
+            "8. Visual Inspection: Zero chatter marks or tool gouging."
+        )
+
+        paint.color = android.graphics.Color.rgb(51, 65, 85)
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        var cy = 175f
+        for (item in checklistItems) {
+            canvas3.drawText(item, 50f, cy, paint)
+            cy += 30f
+        }
+
+        // Signoff stamp
+        paint.color = android.graphics.Color.rgb(16, 185, 129)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        canvas3.drawRoundRect(RectF(320f, 520f, 520f, 620f), 10f, 10f, paint)
+
+        paint.style = Paint.Style.FILL
+        paint.textSize = 14f
+        paint.isFakeBoldText = true
+        canvas3.drawText("QA APPROVED", 360f, 560f, paint)
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        canvas3.drawText("Inspector: QA-LEAD-07", 360f, 585f, paint)
+        canvas3.drawText("Status: RELEASED", 360f, 605f, paint)
+
+        paint.color = android.graphics.Color.rgb(148, 163, 184)
+        paint.textSize = 8.5f
+        canvas3.drawText("CNC Quality Assurance • Page 3 of 3 • End of Document", 50f, 780f, paint)
+        document.finishPage(page3)
+
         FileOutputStream(destFile).use { out ->
             document.writeTo(out)
         }

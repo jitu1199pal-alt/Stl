@@ -32,7 +32,9 @@ data class DxfModel(
     val layers: List<String>,
     val bounds: BoundingBox3D,
     val totalEntityCount: Int = entities.size,
-    val previewBitmap: android.graphics.Bitmap? = null
+    val previewBitmap: android.graphics.Bitmap? = null,
+    val enhancedBitmap: android.graphics.Bitmap? = null,
+    val detectedTexts: List<String> = emptyList()
 )
 
 object DxfParser {

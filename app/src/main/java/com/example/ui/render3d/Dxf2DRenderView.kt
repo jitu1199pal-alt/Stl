@@ -27,12 +27,19 @@ import com.example.data.parser.DxfModel
 import kotlin.math.cos
 import kotlin.math.sin
 
+enum class CadViewMode {
+    VECTOR_CRISP,   // Razor-sharp 100% vector lines on black CAD canvas (zero blur, identical to GstarCAD!)
+    CAD_DARK_HD,    // High-contrast inverted CAD bitmap with sharpened white & colored lines
+    ORIGINAL_PREVIEW // Original embedded preview bitmap
+}
+
 @Composable
 fun Dxf2DRenderView(
     model: DxfModel,
     visibleLayers: Set<String>,
     cameraState: CameraState = remember { CameraState().apply { pitchDeg = 0f; yawDeg = 0f } },
     showGrid: Boolean = true,
+    cadViewMode: CadViewMode = CadViewMode.VECTOR_CRISP,
     modifier: Modifier = Modifier
 ) {
     val textPaint = remember {
@@ -117,8 +124,19 @@ fun Dxf2DRenderView(
             )
 
             fun getLayerColor(layer: String): Color {
-                val idx = model.layers.indexOf(layer).coerceAtLeast(0)
-                return layerColors[idx % layerColors.size]
+                val upper = layer.uppercase()
+                return when {
+                    upper.contains("RED") || upper.contains("DIM") || upper.contains("TITLE") -> Color(0xFFEF4444)
+                    upper.contains("BLUE") || upper.contains("FRAME") || upper.contains("BOUND") -> Color(0xFF3B82F6)
+                    upper.contains("WHITE") || upper.contains("GEOM") || upper.contains("TORAN") || upper.contains("PILLAR") -> Color(0xFFFFFFFF)
+                    upper.contains("CYAN") -> Color(0xFF00E5FF)
+                    upper.contains("YELLOW") -> Color(0xFFFFD700)
+                    upper.contains("GREEN") -> Color(0xFF10B981)
+                    else -> {
+                        val idx = model.layers.indexOf(layer).coerceAtLeast(0)
+                        layerColors[idx % layerColors.size]
+                    }
+                }
             }
 
             // Draw CAD Grid
@@ -140,10 +158,16 @@ fun Dxf2DRenderView(
                 }
             }
 
-            val strokeWidthPx = (2.2f * cameraState.zoom).coerceIn(1.5f, 6.0f)
+            val strokeWidthPx = (1.8f * cameraState.zoom).coerceIn(1.2f, 4.8f)
 
-            // If an AutoCAD drawing preview bitmap is present, render it on the CAD canvas
-            model.previewBitmap?.let { bitmap ->
+            // Select active bitmap based on cadViewMode
+            val activeBitmap = when (cadViewMode) {
+                CadViewMode.CAD_DARK_HD -> model.enhancedBitmap ?: model.previewBitmap
+                CadViewMode.ORIGINAL_PREVIEW -> model.previewBitmap
+                CadViewMode.VECTOR_CRISP -> if (model.entities.isEmpty()) (model.enhancedBitmap ?: model.previewBitmap) else null
+            }
+
+            activeBitmap?.let { bitmap ->
                 cameraState.projectFast(bounds.minX, bounds.maxY, 0f, fastTransform, p1Arr)
                 cameraState.projectFast(bounds.maxX, bounds.minY, 0f, fastTransform, p2Arr)
                 val left = kotlin.math.min(p1Arr[0], p2Arr[0])

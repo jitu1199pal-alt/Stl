@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.db.RecentFileEntity
 import com.example.data.parser.DxfModel
 import com.example.data.parser.ExcelModel
+import com.example.data.parser.ExcelRow
+import com.example.data.parser.ExcelSheet
 import com.example.data.parser.PdfDocumentInfo
 import com.example.data.parser.StlModel
 import com.example.data.parser.ToolpathModel
@@ -217,6 +219,87 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun createBlankExcelWorkbook(workbookName: String = "Book1.xlsx") {
+        val defaultCols = listOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O")
+        val blankRows = (1..35).map { r ->
+            ExcelRow(r, List(defaultCols.size) { "" })
+        }
+        val sheet1 = ExcelSheet(
+            name = "Sheet1",
+            rows = blankRows,
+            columnCount = defaultCols.size
+        )
+        _activeModel.value = ActiveModel.Excel(ExcelModel(workbookName, listOf(sheet1)))
+    }
+
+    fun addNewExcelSheet(sheetName: String? = null): Int {
+        val currentExcel = (_activeModel.value as? ActiveModel.Excel)?.model
+        val defaultCols = listOf("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O")
+        val blankRows = (1..35).map { r ->
+            ExcelRow(r, List(defaultCols.size) { "" })
+        }
+        val nextIdx = (currentExcel?.sheets?.size ?: 0) + 1
+        val finalName = sheetName?.takeIf { it.isNotBlank() } ?: "Sheet$nextIdx"
+        val newSheet = ExcelSheet(
+            name = finalName,
+            rows = blankRows,
+            columnCount = defaultCols.size
+        )
+        if (currentExcel == null) {
+            _activeModel.value = ActiveModel.Excel(ExcelModel("Book1.xlsx", listOf(newSheet)))
+            return 0
+        } else {
+            val updated = currentExcel.copy(sheets = currentExcel.sheets + newSheet)
+            _activeModel.value = ActiveModel.Excel(updated)
+            return updated.sheets.lastIndex
+        }
+    }
+
+    fun updateExcelCell(sheetIndex: Int, rowIndex: Int, colIndex: Int, newValue: String) {
+        val currentExcel = (_activeModel.value as? ActiveModel.Excel)?.model ?: return
+        if (sheetIndex !in currentExcel.sheets.indices) return
+        val targetSheet = currentExcel.sheets[sheetIndex]
+        val maxCols = maxOf(targetSheet.columnCount, colIndex + 1)
+        
+        // Ensure row exists
+        val existingRow = targetSheet.rows.find { it.rowIndex == rowIndex }
+        val updatedRows = if (existingRow != null) {
+            targetSheet.rows.map { row ->
+                if (row.rowIndex == rowIndex) {
+                    val mutableCells = row.cells.toMutableList()
+                    while (mutableCells.size <= colIndex) {
+                        mutableCells.add("")
+                    }
+                    mutableCells[colIndex] = newValue
+                    row.copy(cells = mutableCells)
+                } else {
+                    row
+                }
+            }
+        } else {
+            val mutableRows = targetSheet.rows.toMutableList()
+            val newCells = MutableList(colIndex + 1) { "" }
+            newCells[colIndex] = newValue
+            mutableRows.add(ExcelRow(rowIndex, newCells))
+            mutableRows.sortedBy { it.rowIndex }
+        }
+
+        val updatedSheet = targetSheet.copy(rows = updatedRows, columnCount = maxCols)
+        val updatedSheets = currentExcel.sheets.toMutableList()
+        updatedSheets[sheetIndex] = updatedSheet
+        _activeModel.value = ActiveModel.Excel(currentExcel.copy(sheets = updatedSheets))
+    }
+
+    fun deleteExcelSheet(sheetIndex: Int): Int {
+        val currentExcel = (_activeModel.value as? ActiveModel.Excel)?.model ?: return 0
+        if (currentExcel.sheets.size <= 1) return 0 // Keep at least one sheet
+        if (sheetIndex !in currentExcel.sheets.indices) return 0
+        val updatedSheets = currentExcel.sheets.toMutableList()
+        updatedSheets.removeAt(sheetIndex)
+        _activeModel.value = ActiveModel.Excel(currentExcel.copy(sheets = updatedSheets))
+        return (sheetIndex - 1).coerceAtLeast(0)
     }
 
     fun loadSamplePdf() {

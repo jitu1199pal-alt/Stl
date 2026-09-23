@@ -32,6 +32,11 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.example.ui.render3d.CadViewMode
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -88,6 +93,8 @@ fun DxfViewerScreen(
     val cameraState = remember { CameraState().apply { pitchDeg = 0f; yawDeg = 0f } }
     var showGrid by remember { mutableStateOf(true) }
     var showLayersSheet by remember { mutableStateOf(false) }
+    var showTextsSheet by remember { mutableStateOf(false) }
+    var cadViewMode by remember { mutableStateOf(CadViewMode.VECTOR_CRISP) }
     val sheetState = rememberModalBottomSheetState()
 
     // Automatically fit to screen whenever a DXF model is loaded or changed
@@ -130,10 +137,10 @@ fun DxfViewerScreen(
                         }
                         if (dxfModel != null) {
                             val subtitleText = if (isDwgFile) {
-                                if (dxfModel.previewBitmap != null) {
-                                    "DWG Preview (${dxfModel.previewBitmap.width}×${dxfModel.previewBitmap.height}) • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
-                                } else {
-                                    "DWG Drawing • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                when (cadViewMode) {
+                                    CadViewMode.VECTOR_CRISP -> "Vector CAD Mode (${dxfModel.entities.size} Entities) • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                    CadViewMode.CAD_DARK_HD -> "CAD Dark HD Mode • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                    CadViewMode.ORIGINAL_PREVIEW -> "Original Preview • Zoom: ${(cameraState.zoom * 100).toInt()}%"
                                 }
                             } else {
                                 "Entities: ${dxfModel.entities.size} • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
@@ -203,6 +210,69 @@ fun DxfViewerScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                // DWG CAD View Mode Switcher Strip
+                if (isDwgFile || dxfModel.previewBitmap != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF0F172A))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CadModeChip(
+                                title = "📐 Clear Vector (वेक्टर साफ़)",
+                                isSelected = cadViewMode == CadViewMode.VECTOR_CRISP,
+                                accentColor = Color(0xFF00E5FF),
+                                onClick = { cadViewMode = CadViewMode.VECTOR_CRISP }
+                            )
+                            CadModeChip(
+                                title = "✨ CAD Dark HD",
+                                isSelected = cadViewMode == CadViewMode.CAD_DARK_HD,
+                                accentColor = Color(0xFF10B981),
+                                onClick = { cadViewMode = CadViewMode.CAD_DARK_HD }
+                            )
+                            CadModeChip(
+                                title = "📄 Original",
+                                isSelected = cadViewMode == CadViewMode.ORIGINAL_PREVIEW,
+                                accentColor = Color(0xFFFFD700),
+                                onClick = { cadViewMode = CadViewMode.ORIGINAL_PREVIEW }
+                            )
+                        }
+
+                        if (dxfModel.detectedTexts.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    .clickable { showTextsSheet = true }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.TextFields,
+                                        contentDescription = null,
+                                        tint = Color(0xFF00E5FF),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Text (${dxfModel.detectedTexts.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF00E5FF)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Main CAD Canvas Area
                 Box(
                     modifier = Modifier
@@ -215,6 +285,7 @@ fun DxfViewerScreen(
                         visibleLayers = visibleLayers,
                         cameraState = cameraState,
                         showGrid = showGrid,
+                        cadViewMode = cadViewMode,
                         modifier = Modifier.fillMaxSize()
                     )
 
@@ -232,16 +303,24 @@ fun DxfViewerScreen(
                                 unit = "CAD",
                                 accentColor = if (isDwgFile) Color(0xFF00E5FF) else Color(0xFF10B981)
                             )
+                            if (dxfModel.entities.isNotEmpty() && cadViewMode == CadViewMode.VECTOR_CRISP) {
+                                TelemetryBadge(
+                                    label = "ENTITIES",
+                                    value = "${dxfModel.entities.size}",
+                                    unit = "VEC",
+                                    accentColor = Color(0xFF10B981)
+                                )
+                            }
                             TelemetryBadge(
-                                label = if (isDwgFile && dxfModel.previewBitmap != null) "WIDTH" else "BOUNDS X",
-                                value = if (isDwgFile && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.width}" else "%.1f".format(dxfModel.bounds.sizeX),
-                                unit = if (isDwgFile && dxfModel.previewBitmap != null) "px" else "mm",
+                                label = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "WIDTH" else "BOUNDS X",
+                                value = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.width}" else "%.1f".format(dxfModel.bounds.sizeX),
+                                unit = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "px" else "mm",
                                 accentColor = Color(0xFF10B981)
                             )
                             TelemetryBadge(
-                                label = if (isDwgFile && dxfModel.previewBitmap != null) "HEIGHT" else "BOUNDS Y",
-                                value = if (isDwgFile && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.height}" else "%.1f".format(dxfModel.bounds.sizeY),
-                                unit = if (isDwgFile && dxfModel.previewBitmap != null) "px" else "mm",
+                                label = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "HEIGHT" else "BOUNDS Y",
+                                value = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "${dxfModel.previewBitmap.height}" else "%.1f".format(dxfModel.bounds.sizeY),
+                                unit = if (isDwgFile && cadViewMode != CadViewMode.VECTOR_CRISP && dxfModel.previewBitmap != null) "px" else "mm",
                                 accentColor = Color(0xFF00E5FF)
                             )
                             TelemetryBadge(
@@ -645,6 +724,120 @@ fun DxfViewerScreen(
                 }
             }
         }
+
+        if (showTextsSheet && dxfModel != null) {
+            val clipboardManager = LocalClipboardManager.current
+            ModalBottomSheet(
+                onDismissRequest = { showTextsSheet = false },
+                containerColor = Color(0xFF1E293B)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Detected CAD Texts & Notes",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFF00E5FF).copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "${dxfModel.detectedTexts.size} Found",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00E5FF)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "AutoCAD drawing me se extract ki gayi strings aur dimensions:",
+                        fontSize = 12.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                    ) {
+                        items(dxfModel.detectedTexts) { itemText ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = itemText,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFE2E8F0),
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { clipboardManager.setText(AnnotatedString(itemText)) },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.ContentCopy,
+                                        contentDescription = "Copy text",
+                                        tint = Color(0xFF00E5FF),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CadModeChip(
+    title: String,
+    isSelected: Boolean,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isSelected) accentColor.copy(alpha = 0.22f) else Color(0xFF1E293B))
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) accentColor else Color(0xFF334155),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = title,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+            color = if (isSelected) accentColor else Color(0xFF94A3B8)
+        )
     }
 }
 
