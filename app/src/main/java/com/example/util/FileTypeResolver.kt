@@ -14,7 +14,7 @@ enum class CadFileType(val displayName: String, val badge: String) {
     RLF("ArtCAM 3D Relief", "RLF"),
     ART("ArtCAM 3D Model", "ART"),
     XML3D("Dassault 3DXML", "3DXML"),
-    ASPIRE_3D("Vectric Aspire 3D", "ASPIRE"),
+    ASPIRE_3D("Vectric Aspire 3D (CRV3D)", "CRV3D"),
     DXF("AutoCAD DXF Drawing", "DXF"),
     DWG("AutoCAD DWG Drawing", "DWG"),
     TOOLPATH_GCODE("CNC Toolpath Program", "G-CODE"),
@@ -149,6 +149,7 @@ object FileTypeResolver {
                 mime.contains("spreadsheet") || mime.contains("excel") || mime.contains("sheet") ||
                         mime.contains("csv") || mime.contains("comma-separated") -> return CadFileType.EXCEL
                 mime.contains("model/stl") || mime == "application/sla" -> return CadFileType.STL
+                mime.contains("crv3d") || mime.contains("crv") || mime.contains("aspire") || mime.contains("vectric") -> return CadFileType.ASPIRE_3D
                 mime.contains("model/obj") || mime.contains("wavefront") -> return CadFileType.OBJ
                 mime.contains("3dxml") -> return CadFileType.XML3D
                 mime.contains("artcam") || mime.contains("rlf") -> return CadFileType.RLF
@@ -268,9 +269,11 @@ object FileTypeResolver {
             return CadFileType.RLF
         }
 
-        // 10. Check Vectric Aspire
+        // 10. Check Vectric Aspire (CRV3D / CRV)
         if (sampleAscii.contains("Vectric", ignoreCase = true) ||
             sampleAscii.contains("Aspire", ignoreCase = true) ||
+            sampleAscii.contains("CRV3D", ignoreCase = true) ||
+            sampleAscii.contains("V3M", ignoreCase = true) ||
             (sampleAscii.contains("3D Finish", ignoreCase = true) && sampleAscii.contains("Ball Nose", ignoreCase = true))
         ) {
             return CadFileType.ASPIRE_3D

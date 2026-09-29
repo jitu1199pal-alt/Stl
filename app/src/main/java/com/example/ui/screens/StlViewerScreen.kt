@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,7 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +51,7 @@ import com.example.ui.render3d.Stl3DRenderView
 import com.example.ui.render3d.StlRenderMode
 import com.example.ui.viewmodel.ActiveModel
 import com.example.ui.viewmodel.MainViewModel
+import com.example.util.FileTypeResolver
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,9 +59,19 @@ fun StlViewerScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val activeModel by viewModel.activeModel.collectAsState()
     val renderMode by viewModel.stlRenderMode.collectAsState()
     val stlModel = (activeModel as? ActiveModel.STL)?.model
+
+    val stlFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+        }
+    }
 
     val cameraState = remember { CameraState() }
     var selectedColor by remember { mutableStateOf(Color(0xFFD37554)) } // Default copper terracotta relief color
@@ -101,7 +116,7 @@ fun StlViewerScreen(
                             }
                         }
                         Text(
-                            text = "3D Relief & Model Viewer • ${stlModel?.faceCount ?: 0} Triangles",
+                            text = "3D STL & CRV3D Relief Viewer • ${stlModel?.faceCount ?: 0} Triangles",
                             fontSize = 11.sp,
                             color = Color(0xFF94A3B8)
                         )
@@ -109,7 +124,12 @@ fun StlViewerScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { stlFilePicker.launch(arrayOf("*/*")) }) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Open 3D File (.stl, .crv3d)", tint = Color(0xFFFFD700))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E293B))
@@ -175,13 +195,22 @@ fun StlViewerScreen(
                             StlRenderModeChip("Box", StlRenderMode.BOUNDING_BOX, renderMode) { viewModel.setStlRenderMode(it) }
                         }
                         "File" -> {
-                            CadQuickActionButton("Sample Model") { viewModel.loadSampleStl() }
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "Faces: ${stlModel.faceCount}",
-                                fontSize = 11.sp,
-                                color = Color(0xFF94A3B8)
-                            )
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                item { CadQuickActionButton("Open 3D File") { stlFilePicker.launch(arrayOf("*/*")) } }
+                                item { CadQuickActionButton("Sample STL") { viewModel.loadSampleStl() } }
+                                item { CadQuickActionButton("Sample CRV3D") { viewModel.loadSampleCrv3d() } }
+                                item {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Faces: ${stlModel.faceCount}",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
                         }
                         "Tools" -> {
                             TelemetryBadge(label = "X", value = "%.1f".format(stlModel.bounds.sizeX), unit = "mm", accentColor = Color(0xFFEF4444))

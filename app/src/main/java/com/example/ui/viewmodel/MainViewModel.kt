@@ -183,6 +183,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadSampleCrv3d() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val crv3d = repository.loadSampleCrv3d()
+                _activeModel.value = ActiveModel.STL(crv3d)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     fun loadSampleDxf() {
         viewModelScope.launch {
             _isLoading.value = true

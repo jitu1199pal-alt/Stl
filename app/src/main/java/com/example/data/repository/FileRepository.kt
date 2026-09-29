@@ -149,6 +149,20 @@ class FileRepository(private val context: Context) {
         StlParser.parse("sample_mounting_bracket.stl", sampleText.byteInputStream())
     }
 
+    suspend fun loadSampleCrv3d(): StlModel = withContext(Dispatchers.IO) {
+        val model = AspireReliefParser.parse("sample_decorative_rosette.crv3d", java.io.ByteArrayInputStream(ByteArray(0)))
+        recentDao.insertRecentFile(
+            RecentFileEntity(
+                name = "sample_decorative_rosette.crv3d",
+                uriString = "sample://sample_decorative_rosette.crv3d",
+                fileType = "CRV3D",
+                sizeBytes = 148520L,
+                lineOrFaceCount = model.faceCount
+            )
+        )
+        model
+    }
+
     suspend fun loadSampleDxf(): DxfModel = withContext(Dispatchers.IO) {
         val sampleText = SampleDataGenerator.getSampleDxf()
         DxfParser.parse("sample_flange.dxf", sampleText)

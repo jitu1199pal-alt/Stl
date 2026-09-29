@@ -320,7 +320,7 @@ fun HomeScreen(
                     )
                     ActionTile(
                         title = "2. 3D Model & Relief",
-                        subtitle = "STL, OBJ, RLF, ART, 3DXML, Aspire",
+                        subtitle = "STL, CRV3D, OBJ, RLF, Aspire",
                         icon = Icons.Default.ViewInAr,
                         accentColor = Color(0xFFFFD700),
                         modifier = Modifier.weight(1f),
@@ -376,6 +376,75 @@ fun HomeScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // Dedicated Folder 2 Card: 3D STL & CRV3D Relief Viewer
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { stlFilePicker.launch(arrayOf("*/*")) },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF451A03)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFFD97706)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.ViewInAr,
+                                contentDescription = "3D STL & CRV3D Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Folder 2: 3D STL & CRV3D Viewer",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFFFD700), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "STL / CRV3D",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "3D सॉलिड व Aspire रिलीफ देखें (.stl, .crv3d, .rlf, .obj) • 360° 3D व्यू",
+                                fontSize = 11.sp,
+                                color = Color(0xFFFDE68A)
+                            )
+                        }
+                        Button(
+                            onClick = { stlFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Select 3D", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Dedicated Folder 4 Card: Excel File Viewer
                 Card(
@@ -604,6 +673,16 @@ fun HomeScreen(
                     ) {
                         Text("Bracket (.stl)", fontSize = 10.sp, color = Color(0xFFFFD700))
                     }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.loadSampleCrv3d()
+                            onNavigateToStlViewer()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Carving (.crv3d)", fontSize = 10.sp, color = Color(0xFFFFD700))
+                    }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
@@ -667,7 +746,7 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No recent files opened yet.\nTap one of the folder buttons above to load a .tap, .stl, .dxf, .xlsx, or .pdf file!",
+                            text = "No recent files opened yet.\nTap one of the folder buttons above to load a .tap, .stl, .crv3d, .dxf, .xlsx, or .pdf file!",
                             fontSize = 13.sp,
                             color = Color(0xFF64748B),
                             lineHeight = 18.sp
@@ -684,7 +763,7 @@ fun HomeScreen(
                                 when (item.fileType) {
                                     "EXCEL" -> onNavigateToExcelViewer()
                                     "PDF" -> onNavigateToPdfViewer()
-                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> onNavigateToStlViewer()
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE", "CRV3D" -> onNavigateToStlViewer()
                                     "DXF", "DWG" -> onNavigateToDxfViewer()
                                     else -> onNavigateToProgramViewer()
                                 }
@@ -702,7 +781,7 @@ fun HomeScreen(
                                 imageVector = when (item.fileType) {
                                     "EXCEL" -> Icons.Default.TableChart
                                     "PDF" -> Icons.Default.PictureAsPdf
-                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Icons.Default.ViewInAr
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE", "CRV3D" -> Icons.Default.ViewInAr
                                     "DXF", "DWG" -> Icons.Default.Layers
                                     else -> Icons.Default.Code
                                 },
@@ -710,7 +789,7 @@ fun HomeScreen(
                                 tint = when (item.fileType) {
                                     "EXCEL" -> Color(0xFF10B981)
                                     "PDF" -> Color(0xFFEF4444)
-                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE" -> Color(0xFFFFD700)
+                                    "STL", "OBJ", "RLF", "ART", "3DXML", "ASPIRE", "CRV3D" -> Color(0xFFFFD700)
                                     "DXF", "DWG" -> Color(0xFF10B981)
                                     else -> Color(0xFF00E5FF)
                                 },

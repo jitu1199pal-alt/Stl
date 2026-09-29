@@ -45,11 +45,11 @@ object AspireReliefParser {
 
         // Check for binary STL signature
         if (bytes.size >= 84) {
-            for (offset in 0..minOf(bytes.size - 84, 2048) step 4) {
+            for (offset in 0..minOf(bytes.size - 84, 8192) step 4) {
                 val triCount = ByteBuffer.wrap(bytes, offset + 80, 4).order(ByteOrder.LITTLE_ENDIAN).int
                 val expected = (offset + 84L) + (triCount.toLong() * 50L)
-                if (triCount in 20..5_000_000 && expected == bytes.size.toLong()) {
-                    val sub = bytes.copyOfRange(offset, bytes.size)
+                if (triCount in 20..5_000_000 && (expected == bytes.size.toLong() || expected <= bytes.size.toLong())) {
+                    val sub = bytes.copyOfRange(offset, minOf(bytes.size, expected.toInt()))
                     try {
                         return StlParser.parse(fileName, ByteArrayInputStream(sub))
                     } catch (_: Exception) {}
@@ -57,8 +57,35 @@ object AspireReliefParser {
             }
         }
 
+        // 2b. Check if this is a Zip container containing STL / 3D model
+        val fromZip = tryExtractFromZip(fileName, bytes)
+        if (fromZip != null) return fromZip
+
         // 3. Generate Vectric Aspire 3D Carving Relief model
-        return buildAspireCarvingPlate(fileName)
+        return buildAspireCarvingPlate(fileName, bytes)
+    }
+
+    private fun tryExtractFromZip(fileName: String, bytes: ByteArray): StlModel? {
+        if (bytes.size < 4) return null
+        if (bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) { // PK..
+            try {
+                val zis = java.util.zip.ZipInputStream(ByteArrayInputStream(bytes))
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val entryName = entry.name.lowercase()
+                    if (entryName.endsWith(".stl") || entryName.endsWith(".obj") || entryName.contains("mesh") || entryName.contains("relief")) {
+                        val entryBytes = zis.readBytes()
+                        if (entryBytes.isNotEmpty()) {
+                            try {
+                                return StlParser.parse(fileName, ByteArrayInputStream(entryBytes))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    entry = zis.nextEntry
+                }
+            } catch (_: Exception) {}
+        }
+        return null
     }
 
     private fun isAspireGCode(sample: String): Boolean {
@@ -126,7 +153,7 @@ object AspireReliefParser {
         return if (triangles.isNotEmpty()) buildStlModel(fileName, triangles) else null
     }
 
-    private fun buildAspireCarvingPlate(fileName: String): StlModel {
+    private fun buildAspireCarvingPlate(fileName: String, rawBytes: ByteArray = ByteArray(0)): StlModel {
         val rows = 52
         val cols = 52
         val width = 120f
