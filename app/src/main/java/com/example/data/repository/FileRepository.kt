@@ -87,16 +87,44 @@ class FileRepository(private val context: Context) {
     suspend fun parseDxfFromUri(uri: Uri, name: String): DxfModel = withContext(Dispatchers.IO) {
         val lower = name.lowercase()
         val isDwg = lower.endsWith(".dwg")
-        val model = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            if (isDwg) {
-                DwgParser.parseStream(name, inputStream)
-            } else {
-                DxfParser.parseStream(name, inputStream)
+        val mimeType = context.contentResolver.getType(uri)
+
+        var querySize = 0L
+        try {
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (sizeIdx != -1) {
+                        querySize = cursor.getLong(sizeIdx)
+                    }
+                }
             }
-        } ?: if (isDwg) {
-            DwgParser.parseStream(name, "".byteInputStream())
+        } catch (_: Exception) {}
+
+        val bytes = try {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+        } catch (_: Exception) {
+            ByteArray(0)
+        }
+
+        val actualSize = if (querySize > 0L) querySize else bytes.size.toLong()
+
+        val model = if (isDwg) {
+            DwgParser.parseBytes(
+                fileName = name,
+                uriString = uri.toString(),
+                mimeType = mimeType,
+                fileSize = actualSize,
+                bytes = bytes
+            )
         } else {
-            DxfParser.parse(name, SampleDataGenerator.getSampleDxf())
+            DxfParser.parseBytes(
+                name = name,
+                bytes = bytes,
+                uriString = uri.toString(),
+                mimeType = mimeType,
+                fileSize = actualSize
+            )
         }
 
         recentDao.insertRecentFile(
@@ -104,7 +132,7 @@ class FileRepository(private val context: Context) {
                 name = name,
                 uriString = uri.toString(),
                 fileType = if (isDwg) "DWG" else "DXF",
-                sizeBytes = 0L,
+                sizeBytes = actualSize,
                 lineOrFaceCount = model.entities.size
             )
         )
@@ -134,20 +162,6 @@ class FileRepository(private val context: Context) {
     suspend fun loadCncBracketDxf(): DxfModel = withContext(Dispatchers.IO) {
         val sampleText = SampleDataGenerator.getSampleCncBracketDxf()
         DxfParser.parse("cnc_bracket_plate.dxf", sampleText)
-    }
-
-    suspend fun loadNashikShivalayDwg(): DxfModel = withContext(Dispatchers.IO) {
-        val model = DwgParser.createNashikShivalayModel("Nashik_Shivalay_Pillar_Plan.dwg")
-        recentDao.insertRecentFile(
-            RecentFileEntity(
-                name = "Nashik_Shivalay_Pillar_Plan.dwg",
-                uriString = "sample://nashik_shivalay_dwg",
-                fileType = "DWG",
-                sizeBytes = 0L,
-                lineOrFaceCount = model.entities.size
-            )
-        )
-        model
     }
 
     suspend fun parseExcelFromUri(uri: Uri, name: String): ExcelModel = withContext(Dispatchers.IO) {

@@ -90,10 +90,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _pendingDestination.value = null
     }
 
+    private var fileLoadJob: Job? = null
+
     fun openResolvedFile(info: ResolvedFileInfo, autoNavigate: Boolean = true) {
-        viewModelScope.launch {
+        fileLoadJob?.cancel()
+        fileLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
+            // Clear previous model and layers immediately to avoid state leakage between files
+            _activeModel.value = ActiveModel.None
+            _dxfVisibleLayers.value = emptySet()
             try {
                 when {
                     info.fileType == CadFileType.EXCEL -> {
@@ -199,21 +205,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val dxf = repository.loadArchitecturalDxf()
                 _activeModel.value = ActiveModel.DXF(dxf)
                 _dxfVisibleLayers.value = dxf.layers.toSet()
-            } catch (e: Exception) {
-                _errorMessage.value = e.message
-            } finally {
-                _isLoading.value = false
-            }
-        }
-    }
-
-    fun loadNashikShivalayDwg() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val dwg = repository.loadNashikShivalayDwg()
-                _activeModel.value = ActiveModel.DXF(dwg)
-                _dxfVisibleLayers.value = dwg.layers.toSet()
             } catch (e: Exception) {
                 _errorMessage.value = e.message
             } finally {

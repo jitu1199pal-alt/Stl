@@ -560,13 +560,13 @@ fun HomeScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            viewModel.loadNashikShivalayDwg()
+                            viewModel.loadArchitecturalDxf()
                             onNavigateToDxfViewer()
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("🏛️ Nashik Shivalay Toran (.dwg)", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
+                        Text("📐 Architectural Plan (.dxf)", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = {

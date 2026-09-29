@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.GridOff
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ZoomIn
@@ -94,6 +95,7 @@ fun DxfViewerScreen(
     var showGrid by remember { mutableStateOf(true) }
     var showLayersSheet by remember { mutableStateOf(false) }
     var showTextsSheet by remember { mutableStateOf(false) }
+    var showStatsSheet by remember { mutableStateOf(false) }
     var cadViewMode by remember { mutableStateOf(CadViewMode.VECTOR_CRISP) }
     val sheetState = rememberModalBottomSheetState()
 
@@ -187,6 +189,16 @@ fun DxfViewerScreen(
                             Icons.Default.Layers,
                             contentDescription = "Layers Filter",
                             tint = Color(0xFF10B981)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showStatsSheet = true },
+                        modifier = Modifier.testTag("dxf_stats_btn")
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Entity Statistics",
+                            tint = Color(0xFF38BDF8)
                         )
                     }
                 },
@@ -799,6 +811,142 @@ fun DxfViewerScreen(
                                         contentDescription = "Copy text",
                                         tint = Color(0xFF00E5FF),
                                         modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+
+        if (showStatsSheet && dxfModel != null) {
+            ModalBottomSheet(
+                onDismissRequest = { showStatsSheet = false },
+                sheetState = sheetState,
+                containerColor = Color(0xFF0F172A)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CAD / DWG Debug & Stats",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        if (dxfModel.dwgVersion != null) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0xFF00E5FF).copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = dxfModel.dwgVersion,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00E5FF)
+                                )
+                            }
+                        }
+                    }
+
+                    if (dxfModel.debugReport != null) {
+                        val clipboard = LocalClipboardManager.current
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF020617)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "DWG / CAD Validation Debug Info",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF00E5FF)
+                                    )
+                                    IconButton(
+                                        onClick = { clipboard.setText(AnnotatedString(dxfModel.debugReport!!)) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.ContentCopy,
+                                            contentDescription = "Copy Debug Info",
+                                            tint = Color(0xFF00E5FF),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = dxfModel.debugReport!!,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF38BDF8)
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "Entity Breakdown for currently loaded file:",
+                        fontSize = 12.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    )
+
+                    val standardKeys = listOf(
+                        "LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE", "SPLINE", "HATCH", "INSERT", "TEXT", "MTEXT", "DIMENSION"
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                    ) {
+                        items(standardKeys) { key ->
+                            val count = dxfModel.entityStats[key] ?: 0
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .background(Color(0xFF1E293B), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$key = $count",
+                                    fontSize = 14.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (count > 0) Color(0xFF00E5FF) else Color(0xFF64748B)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .background(if (count > 0) Color(0xFF00E5FF).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (count > 0) "$count entities" else "0",
+                                        fontSize = 12.sp,
+                                        color = if (count > 0) Color(0xFF38BDF8) else Color(0xFF64748B)
                                     )
                                 }
                             }

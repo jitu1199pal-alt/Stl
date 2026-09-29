@@ -24,7 +24,12 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.data.parser.DxfEntity
 import com.example.data.parser.DxfModel
+import com.example.data.parser.DxfParser
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 enum class CadViewMode {
@@ -100,6 +105,7 @@ fun Dxf2DRenderView(
         val path = remember { Path() }
         val p1Arr = remember { FloatArray(3) }
         val p2Arr = remember { FloatArray(3) }
+        val p3Arr = remember { FloatArray(3) }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
@@ -123,8 +129,21 @@ fun Dxf2DRenderView(
                 Color(0xFFF43F5E), Color(0xFFA855F7), Color(0xFF3B82F6)
             )
 
-            fun getLayerColor(layer: String): Color {
-                val upper = layer.uppercase()
+            fun resolveEntityColor(entity: DxfEntity): Color {
+                if (entity.color != null && entity.color != 0) {
+                    val c = entity.color!!
+                    val a = (c ushr 24) and 0xFF
+                    val r = (c ushr 16) and 0xFF
+                    val g = (c ushr 8) and 0xFF
+                    val b = c and 0xFF
+                    // Avoid pure black lines on black background
+                    if (r < 25 && g < 25 && b < 25) {
+                        return Color.White
+                    }
+                    return Color(red = r / 255f, green = g / 255f, blue = b / 255f, alpha = if (a > 0) a / 255f else 1f)
+                }
+
+                val upper = entity.layer.uppercase()
                 return when {
                     upper.contains("RED") || upper.contains("DIM") || upper.contains("TITLE") -> Color(0xFFEF4444)
                     upper.contains("BLUE") || upper.contains("FRAME") || upper.contains("BOUND") -> Color(0xFF3B82F6)
@@ -133,7 +152,7 @@ fun Dxf2DRenderView(
                     upper.contains("YELLOW") -> Color(0xFFFFD700)
                     upper.contains("GREEN") -> Color(0xFF10B981)
                     else -> {
-                        val idx = model.layers.indexOf(layer).coerceAtLeast(0)
+                        val idx = model.layers.indexOf(entity.layer).coerceAtLeast(0)
                         layerColors[idx % layerColors.size]
                     }
                 }
@@ -158,7 +177,8 @@ fun Dxf2DRenderView(
                 }
             }
 
-            val strokeWidthPx = (1.5f * (cameraState.zoom / 1.5f).coerceIn(0.7f, 1.8f)).coerceIn(1.2f, 2.8f)
+            // Dynamic stroke width ensuring lines stay thin and razor sharp across any zoom
+            val strokeWidthPx = (1.5f * (cameraState.zoom / 1.5f).coerceIn(0.7f, 1.8f)).coerceIn(1.0f, 2.5f)
 
             // Select active bitmap based on cadViewMode
             val activeBitmap = when (cadViewMode) {
@@ -170,29 +190,19 @@ fun Dxf2DRenderView(
             activeBitmap?.let { bitmap ->
                 cameraState.projectFast(bounds.minX, bounds.maxY, 0f, fastTransform, p1Arr)
                 cameraState.projectFast(bounds.maxX, bounds.minY, 0f, fastTransform, p2Arr)
-                val left = kotlin.math.min(p1Arr[0], p2Arr[0])
-                val top = kotlin.math.min(p1Arr[1], p2Arr[1])
-                val right = kotlin.math.max(p1Arr[0], p2Arr[0])
-                val bottom = kotlin.math.max(p1Arr[1], p2Arr[1])
+                val left = min(p1Arr[0], p2Arr[0])
+                val top = min(p1Arr[1], p2Arr[1])
+                val right = max(p1Arr[0], p2Arr[0])
+                val bottom = max(p1Arr[1], p2Arr[1])
                 val destRect = android.graphics.RectF(left, top, right, bottom)
                 drawContext.canvas.nativeCanvas.drawBitmap(bitmap, null, destRect, bitmapPaint)
             }
 
-            // Draw DXF Entities
+            // Render CAD Vector Entities
             for (entity in model.entities) {
-                val layerName = when (entity) {
-                    is DxfEntity.Line -> entity.layer
-                    is DxfEntity.Circle -> entity.layer
-                    is DxfEntity.Arc -> entity.layer
-                    is DxfEntity.Polyline -> entity.layer
-                    is DxfEntity.TextEntity -> entity.layer
-                    is DxfEntity.Ellipse -> entity.layer
-                }
+                if (visibleLayers.isNotEmpty() && !visibleLayers.contains(entity.layer)) continue
 
-                if (visibleLayers.isNotEmpty() && !visibleLayers.contains(layerName)) continue
-
-                val color = getLayerColor(layerName)
-
+                val color = resolveEntityColor(entity)
                 val strokeStyle = Stroke(width = strokeWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
                 when (entity) {
@@ -204,33 +214,8 @@ fun Dxf2DRenderView(
                     is DxfEntity.Circle -> {
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
                         cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
-                        val radiusPx = kotlin.math.abs(p2Arr[0] - p1Arr[0])
+                        val radiusPx = abs(p2Arr[0] - p1Arr[0])
                         drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = strokeStyle)
-                    }
-                    is DxfEntity.Ellipse -> {
-                        path.reset()
-                        val majorLen = entity.majorAxis.length().toDouble()
-                        val minorLen = (majorLen * entity.axisRatio.toDouble()).coerceAtLeast(0.001)
-                        val rotAngle = kotlin.math.atan2(entity.majorAxis.y.toDouble(), entity.majorAxis.x.toDouble())
-                        val cosR = kotlin.math.cos(rotAngle)
-                        val sinR = kotlin.math.sin(rotAngle)
-
-                        val steps = 64
-                        for (step in 0..steps) {
-                            val theta = 2.0 * Math.PI * step / steps
-                            val lx = majorLen * kotlin.math.cos(theta)
-                            val ly = minorLen * kotlin.math.sin(theta)
-                            val wx = (entity.center.x + lx * cosR - ly * sinR).toFloat()
-                            val wy = (entity.center.y + lx * sinR + ly * cosR).toFloat()
-                            cameraState.projectFast(wx, wy, entity.center.z, fastTransform, p1Arr)
-                            if (step == 0) {
-                                path.moveTo(p1Arr[0], p1Arr[1])
-                            } else {
-                                path.lineTo(p1Arr[0], p1Arr[1])
-                            }
-                        }
-                        path.close()
-                        drawPath(path, color, style = strokeStyle)
                     }
                     is DxfEntity.Arc -> {
                         path.reset()
@@ -240,7 +225,7 @@ fun Dxf2DRenderView(
                             endRad += 2.0 * Math.PI
                         }
                         val sweep = endRad - startRad
-                        val steps = kotlin.math.max(36, (sweep / (Math.PI / 36.0)).toInt()).coerceAtMost(128)
+                        val steps = max(32, (sweep / (Math.PI / 32.0)).toInt()).coerceAtMost(128)
                         var first = true
 
                         for (step in 0..steps) {
@@ -273,12 +258,107 @@ fun Dxf2DRenderView(
                             drawPath(path, color, style = strokeStyle)
                         }
                     }
+                    is DxfEntity.Spline -> {
+                        val smooth = DxfParser.interpolateSpline(entity.controlPoints, entity.isClosed)
+                        if (smooth.isNotEmpty()) {
+                            path.reset()
+                            cameraState.projectFast(smooth[0].x, smooth[0].y, smooth[0].z, fastTransform, p1Arr)
+                            path.moveTo(p1Arr[0], p1Arr[1])
+                            for (idx in 1 until smooth.size) {
+                                cameraState.projectFast(smooth[idx].x, smooth[idx].y, smooth[idx].z, fastTransform, p1Arr)
+                                path.lineTo(p1Arr[0], p1Arr[1])
+                            }
+                            if (entity.isClosed) path.close()
+                            drawPath(path, color, style = strokeStyle)
+                        }
+                    }
+                    is DxfEntity.Ellipse -> {
+                        path.reset()
+                        val majorLen = entity.majorAxis.length().toDouble()
+                        val minorLen = (majorLen * entity.axisRatio.toDouble()).coerceAtLeast(0.001)
+                        val rotAngle = atan2(entity.majorAxis.y.toDouble(), entity.majorAxis.x.toDouble())
+                        val cosR = cos(rotAngle)
+                        val sinR = sin(rotAngle)
+
+                        val steps = 64
+                        for (step in 0..steps) {
+                            val theta = 2.0 * Math.PI * step / steps
+                            val lx = majorLen * cos(theta)
+                            val ly = minorLen * sin(theta)
+                            val wx = (entity.center.x + lx * cosR - ly * sinR).toFloat()
+                            val wy = (entity.center.y + lx * sinR + ly * cosR).toFloat()
+                            cameraState.projectFast(wx, wy, entity.center.z, fastTransform, p1Arr)
+                            if (step == 0) {
+                                path.moveTo(p1Arr[0], p1Arr[1])
+                            } else {
+                                path.lineTo(p1Arr[0], p1Arr[1])
+                            }
+                        }
+                        path.close()
+                        drawPath(path, color, style = strokeStyle)
+                    }
                     is DxfEntity.TextEntity -> {
                         cameraState.projectFast(entity.position.x, entity.position.y, entity.position.z, fastTransform, p1Arr)
-                        val fontSizePx = (entity.height * fastTransform.finalScale).coerceIn(6f, 320f)
+                        val fontSizePx = (entity.height * fastTransform.finalScale).coerceIn(8f, 250f)
                         textPaint.textSize = fontSizePx
                         textPaint.color = color.toArgb()
                         drawContext.canvas.nativeCanvas.drawText(entity.text, p1Arr[0], p1Arr[1], textPaint)
+                    }
+                    is DxfEntity.Dimension -> {
+                        // Dimension line between defPoint1 and defPoint2
+                        cameraState.projectFast(entity.defPoint1.x, entity.defPoint1.y, entity.defPoint1.z, fastTransform, p1Arr)
+                        cameraState.projectFast(entity.defPoint2.x, entity.defPoint2.y, entity.defPoint2.z, fastTransform, p2Arr)
+                        drawLine(color, Offset(p1Arr[0], p1Arr[1]), Offset(p2Arr[0], p2Arr[1]), strokeWidth = strokeWidthPx)
+
+                        // Dimension text at textPoint
+                        if (entity.text.isNotBlank()) {
+                            cameraState.projectFast(entity.textPoint.x, entity.textPoint.y, entity.textPoint.z, fastTransform, p3Arr)
+                            textPaint.textSize = (14f * fastTransform.finalScale).coerceIn(8f, 100f)
+                            textPaint.color = color.toArgb()
+                            drawContext.canvas.nativeCanvas.drawText(entity.text, p3Arr[0], p3Arr[1], textPaint)
+                        }
+                    }
+                    is DxfEntity.Leader -> {
+                        if (entity.vertices.size >= 2) {
+                            path.reset()
+                            cameraState.projectFast(entity.vertices[0].x, entity.vertices[0].y, entity.vertices[0].z, fastTransform, p1Arr)
+                            path.moveTo(p1Arr[0], p1Arr[1])
+                            for (idx in 1 until entity.vertices.size) {
+                                cameraState.projectFast(entity.vertices[idx].x, entity.vertices[idx].y, entity.vertices[idx].z, fastTransform, p1Arr)
+                                path.lineTo(p1Arr[0], p1Arr[1])
+                            }
+                            drawPath(path, color, style = strokeStyle)
+                        }
+                    }
+                    is DxfEntity.Solid -> {
+                        // Render 3 or 4 point solids as stroked/thin outlines to avoid opaque black occlusion
+                        if (entity.points.size >= 3) {
+                            path.reset()
+                            cameraState.projectFast(entity.points[0].x, entity.points[0].y, entity.points[0].z, fastTransform, p1Arr)
+                            path.moveTo(p1Arr[0], p1Arr[1])
+                            for (idx in 1 until entity.points.size) {
+                                cameraState.projectFast(entity.points[idx].x, entity.points[idx].y, entity.points[idx].z, fastTransform, p1Arr)
+                                path.lineTo(p1Arr[0], p1Arr[1])
+                            }
+                            path.close()
+                            drawPath(path, color, style = strokeStyle)
+                        }
+                    }
+                    is DxfEntity.Hatch -> {
+                        // Render hatch boundary loops cleanly without opaque black block fills
+                        for (loop in entity.boundaryLoops) {
+                            if (loop.size >= 2) {
+                                path.reset()
+                                cameraState.projectFast(loop[0].x, loop[0].y, loop[0].z, fastTransform, p1Arr)
+                                path.moveTo(p1Arr[0], p1Arr[1])
+                                for (idx in 1 until loop.size) {
+                                    cameraState.projectFast(loop[idx].x, loop[idx].y, loop[idx].z, fastTransform, p1Arr)
+                                    path.lineTo(p1Arr[0], p1Arr[1])
+                                }
+                                path.close()
+                                drawPath(path, color.copy(alpha = 0.85f), style = strokeStyle)
+                            }
+                        }
                     }
                 }
             }
