@@ -144,15 +144,25 @@ class CadSurfaceView @JvmOverloads constructor(
             val r = ((colorRgb565 shr 11) and 0x1F) * 255 / 31
             val g = ((colorRgb565 shr 5) and 0x3F) * 255 / 63
             val b = (colorRgb565 and 0x1F) * 255 / 31
-            linePaint.color = Color.rgb(r, g, b)
+            
+            // Contrast control: Invert dark strokes to solid white for maximum legibility on dark canvas
+            val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+            if (luminance < 75f || (r < 75 && g < 75 && b < 75)) {
+                linePaint.color = Color.WHITE
+            } else {
+                linePaint.color = Color.rgb(r, g, b)
+            }
 
             when (type) {
                 1, 4, 6 -> {
                     canvas.drawLine(x1, y1, x2, y2, linePaint)
                 }
                 2 -> {
-                    arcBounds.set(x1 - radius, y1 - radius, x1 + radius, y1 + radius)
-                    canvas.drawArc(arcBounds, startAngle, sweepAngle, false, linePaint)
+                    // Strict ARC Rendering: Only draw if sweepAngle > 0.05f with useCenter = false
+                    if (sweepAngle > 0.05f) {
+                        arcBounds.set(x1 - radius, y1 - radius, x1 + radius, y1 + radius)
+                        canvas.drawArc(arcBounds, startAngle, sweepAngle, false, linePaint)
+                    }
                 }
                 3 -> {
                     canvas.drawCircle(x1, y1, radius, linePaint)

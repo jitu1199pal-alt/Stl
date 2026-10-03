@@ -31,7 +31,10 @@ sealed class DxfEntity {
         val center: Vector3D,
         val radius: Float,
         override val color: Int? = null
-    ) : DxfEntity()
+    ) : DxfEntity() {
+        val centerX: Float get() = center.x
+        val centerY: Float get() = center.y
+    }
 
     data class Arc(
         override val layer: String,
@@ -40,7 +43,17 @@ sealed class DxfEntity {
         val startAngleDeg: Float,
         val endAngleDeg: Float,
         override val color: Int? = null
-    ) : DxfEntity()
+    ) : DxfEntity() {
+        val centerX: Float get() = center.x
+        val centerY: Float get() = center.y
+        val startAngle: Float get() = startAngleDeg
+        val endAngle: Float get() = endAngleDeg
+        val sweepAngle: Float get() {
+            var s = endAngleDeg - startAngleDeg
+            if (s < 0f) s += 360f
+            return s
+        }
+    }
 
     data class Polyline(
         override val layer: String,
@@ -74,7 +87,9 @@ sealed class DxfEntity {
         val controlPoints: List<Vector3D>,
         val isClosed: Boolean = false,
         override val color: Int? = null
-    ) : DxfEntity()
+    ) : DxfEntity() {
+        val points: List<Vector3D> get() = controlPoints
+    }
 
     data class Hatch(
         override val layer: String,
@@ -386,8 +401,7 @@ object DxfParser {
                     }
                     if (splinePoints.isNotEmpty()) {
                         recordStat("SPLINE")
-                        val smoothPoints = interpolateSpline(splinePoints, isClosed = polyClosed)
-                        val entity = DxfEntity.Polyline(currentLayer, smoothPoints, isClosed = polyClosed, color = entityColor)
+                        val entity = DxfEntity.Spline(currentLayer, ArrayList(splinePoints), isClosed = polyClosed, color = entityColor)
                         addEntity(entity)
                     }
                 }
@@ -770,43 +784,39 @@ object DxfParser {
     }
 
     /**
-     * Interpolates AutoCAD SPLINE control / fit points into a continuous smooth curve
-     * using cubic Catmull-Rom spline interpolation so that splines do not look like zig-zag lines.
+     * Interpolates AutoCAD SPLINE vertices smoothly without zig-zag ringing or overshoots.
+     * For densely sampled vertices (>12 points), vertices are kept pristine with 0% distortion.
+     * For sparse control points, Chaikin's corner-cutting / uniform B-spline subdivision is used,
+     * which is mathematically guaranteed to stay strictly within the convex hull with zero overshoot.
      */
     fun interpolateSpline(points: List<Vector3D>, isClosed: Boolean): List<Vector3D> {
         if (points.size <= 2) return points
-        val result = ArrayList<Vector3D>(points.size * 16)
-        val pts = ArrayList(points)
-        if (isClosed) {
-            pts.add(0, points.last())
-            pts.add(points[0])
-            pts.add(points[1])
-        } else {
-            pts.add(0, points.first())
-            pts.add(points.last())
-        }
+        if (points.size >= 16) return points // Already high-precision vertices, preserve 1:1 AutoCAD contour!
 
-        val stepsPerSegment = 16
-        for (i in 1 until pts.size - 2) {
-            val p0 = pts[i - 1]
-            val p1 = pts[i]
-            val p2 = pts[i + 1]
-            val p3 = pts[i + 2]
-
-            for (step in 0 until stepsPerSegment) {
-                val t = step.toFloat() / stepsPerSegment
-                val t2 = t * t
-                val t3 = t2 * t
-
-                val x = 0.5f * ((2f * p1.x) + (-p0.x + p2.x) * t + (2f * p0.x - 5f * p1.x + 4f * p2.x - p3.x) * t2 + (-p0.x + 3f * p1.x - 3f * p2.x + p3.x) * t3)
-                val y = 0.5f * ((2f * p1.y) + (-p0.y + p2.y) * t + (2f * p0.y - 5f * p1.y + 4f * p2.y - p3.y) * t2 + (-p0.y + 3f * p1.y - 3f * p2.y + p3.y) * t3)
-                val z = 0.5f * ((2f * p1.z) + (-p0.z + p2.z) * t + (2f * p0.z - 5f * p1.z + 4f * p2.z - p3.z) * t2 + (-p0.z + 3f * p1.z - 3f * p2.z + p3.z) * t3)
-
-                result.add(Vector3D(x, y, z))
+        var current = points
+        repeat(3) {
+            val next = ArrayList<Vector3D>(current.size * 2)
+            val n = current.size
+            if (isClosed) {
+                for (i in 0 until n) {
+                    val p0 = current[i]
+                    val p1 = current[(i + 1) % n]
+                    next.add(Vector3D(0.75f * p0.x + 0.25f * p1.x, 0.75f * p0.y + 0.25f * p1.y, 0.75f * p0.z + 0.25f * p1.z))
+                    next.add(Vector3D(0.25f * p0.x + 0.75f * p1.x, 0.25f * p0.y + 0.75f * p1.y, 0.25f * p0.z + 0.75f * p1.z))
+                }
+            } else {
+                next.add(current.first())
+                for (i in 0 until n - 1) {
+                    val p0 = current[i]
+                    val p1 = current[i + 1]
+                    next.add(Vector3D(0.75f * p0.x + 0.25f * p1.x, 0.75f * p0.y + 0.25f * p1.y, 0.75f * p0.z + 0.25f * p1.z))
+                    next.add(Vector3D(0.25f * p0.x + 0.75f * p1.x, 0.25f * p0.y + 0.75f * p1.y, 0.25f * p0.z + 0.75f * p1.z))
+                }
+                next.add(current.last())
             }
+            current = next
         }
-        result.add(points.last())
-        return result
+        return current
     }
 
     private fun transformBlockPoint(

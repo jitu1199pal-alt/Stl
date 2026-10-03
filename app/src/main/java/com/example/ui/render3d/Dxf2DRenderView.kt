@@ -60,6 +60,16 @@ fun Dxf2DRenderView(
             isDither = true
         }
     }
+    val strokePaint = remember {
+        Paint().apply {
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+    }
+    val nativeArcRect = remember { android.graphics.RectF() }
+    val nativePath = remember { android.graphics.Path() }
 
     Box(
         modifier = modifier
@@ -136,8 +146,9 @@ fun Dxf2DRenderView(
                     val r = (c ushr 16) and 0xFF
                     val g = (c ushr 8) and 0xFF
                     val b = c and 0xFF
-                    // Avoid pure black lines on black background
-                    if (r < 25 && g < 25 && b < 25) {
+                    // Rule 4: Contrast Control - Invert black / dark vector strokes to solid white
+                    val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+                    if (luminance < 75f || (r < 75 && g < 75 && b < 75)) {
                         return Color.White
                     }
                     return Color(red = r / 255f, green = g / 255f, blue = b / 255f, alpha = if (a > 0) a / 255f else 1f)
@@ -213,63 +224,110 @@ fun Dxf2DRenderView(
                     }
                     is DxfEntity.Circle -> {
                         cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
-                        cameraState.projectFast(entity.center.x + entity.radius, entity.center.y, entity.center.z, fastTransform, p2Arr)
-                        val radiusPx = abs(p2Arr[0] - p1Arr[0])
-                        drawCircle(color, radius = radiusPx, center = Offset(p1Arr[0], p1Arr[1]), style = strokeStyle)
+                        val cx = p1Arr[0]
+                        val cy = p1Arr[1]
+                        val radiusPx = entity.radius * fastTransform.finalScale
+                        if (radiusPx > 0.05f) {
+                            strokePaint.color = color.toArgb()
+                            strokePaint.strokeWidth = strokeWidthPx
+                            drawContext.canvas.nativeCanvas.drawCircle(cx, cy, radiusPx, strokePaint)
+                        }
                     }
                     is DxfEntity.Arc -> {
-                        path.reset()
-                        var startRad = Math.toRadians(entity.startAngleDeg.toDouble())
-                        var endRad = Math.toRadians(entity.endAngleDeg.toDouble())
-                        while (endRad <= startRad) {
-                            endRad += 2.0 * Math.PI
-                        }
-                        val sweep = endRad - startRad
-                        val steps = max(32, (sweep / (Math.PI / 32.0)).toInt()).coerceAtMost(128)
-                        var first = true
+                        cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
+                        val cx = p1Arr[0]
+                        val cy = p1Arr[1]
+                        val radiusPx = entity.radius * fastTransform.finalScale
 
-                        for (step in 0..steps) {
-                            val t = step / steps.toFloat()
-                            val ang = startRad + t * sweep
-                            val ax = entity.center.x + entity.radius * cos(ang).toFloat()
-                            val ay = entity.center.y + entity.radius * sin(ang).toFloat()
-                            cameraState.projectFast(ax, ay, entity.center.z, fastTransform, p1Arr)
+                        if (radiusPx > 0.05f) {
+                            val startAngle = entity.startAngleDeg
+                            val endAngle = entity.endAngleDeg
 
-                            if (first) {
-                                path.moveTo(p1Arr[0], p1Arr[1])
-                                first = false
-                            } else {
-                                path.lineTo(p1Arr[0], p1Arr[1])
+                            // CAD counter-clockwise sweep angle calculation
+                            var sweepAngle = endAngle - startAngle
+                            if (sweepAngle < 0f) {
+                                sweepAngle += 360f
+                            }
+
+                            // Rule 1: Strict ARC Rendering - Differentiate an ARC from a CIRCLE.
+                            // Use canvas.drawArc() with useCenter = false.
+                            // Only render if sweepAngle > 0.05f (prevent rendering full circle where slight curves or degenerate arcs are)
+                            if (sweepAngle > 0.05f) {
+                                strokePaint.color = color.toArgb()
+                                strokePaint.strokeWidth = strokeWidthPx
+
+                                if (abs(cameraState.pitchDeg) < 0.5f && abs(cameraState.yawDeg) < 0.5f) {
+                                    // 2D CAD Top View: native canvas.drawArc with useCenter = false
+                                    nativeArcRect.set(cx - radiusPx, cy - radiusPx, cx + radiusPx, cy + radiusPx)
+                                    // In CAD: angles are CCW with +Y up.
+                                    // In Android Canvas: angles are CW with +Y down.
+                                    // Screen start angle is -endAngle and sweep is sweepAngle.
+                                    drawContext.canvas.nativeCanvas.drawArc(
+                                        nativeArcRect,
+                                        -endAngle,
+                                        sweepAngle,
+                                        false,
+                                        strokePaint
+                                    )
+                                } else {
+                                    // 3D perspective orbit: smooth parametric curve with zero distortion
+                                    nativePath.reset()
+                                    val steps = max(24, (sweepAngle / 3f).toInt()).coerceAtMost(128)
+                                    val startRad = Math.toRadians(startAngle.toDouble())
+                                    val sweepRad = Math.toRadians(sweepAngle.toDouble())
+
+                                    for (step in 0..steps) {
+                                        val t = step.toDouble() / steps.toDouble()
+                                        val ang = startRad + t * sweepRad
+                                        val ax = (entity.center.x + entity.radius * cos(ang)).toFloat()
+                                        val ay = (entity.center.y + entity.radius * sin(ang)).toFloat()
+                                        cameraState.projectFast(ax, ay, entity.center.z, fastTransform, p1Arr)
+                                        if (step == 0) {
+                                            nativePath.moveTo(p1Arr[0], p1Arr[1])
+                                        } else {
+                                            nativePath.lineTo(p1Arr[0], p1Arr[1])
+                                        }
+                                    }
+                                    drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
+                                }
                             }
                         }
-                        drawPath(path, color, style = strokeStyle)
                     }
                     is DxfEntity.Polyline -> {
                         if (entity.points.isNotEmpty()) {
-                            path.reset()
+                            nativePath.reset()
                             cameraState.projectFast(entity.points[0].x, entity.points[0].y, entity.points[0].z, fastTransform, p1Arr)
-                            path.moveTo(p1Arr[0], p1Arr[1])
+                            nativePath.moveTo(p1Arr[0], p1Arr[1])
 
                             for (idx in 1 until entity.points.size) {
                                 cameraState.projectFast(entity.points[idx].x, entity.points[idx].y, entity.points[idx].z, fastTransform, p1Arr)
-                                path.lineTo(p1Arr[0], p1Arr[1])
+                                nativePath.lineTo(p1Arr[0], p1Arr[1])
                             }
-                            if (entity.isClosed) path.close()
-                            drawPath(path, color, style = strokeStyle)
+                            if (entity.isClosed) {
+                                nativePath.close()
+                            }
+                            strokePaint.color = color.toArgb()
+                            strokePaint.strokeWidth = strokeWidthPx
+                            drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
                         }
                     }
                     is DxfEntity.Spline -> {
                         val smooth = DxfParser.interpolateSpline(entity.controlPoints, entity.isClosed)
                         if (smooth.isNotEmpty()) {
-                            path.reset()
+                            nativePath.reset()
                             cameraState.projectFast(smooth[0].x, smooth[0].y, smooth[0].z, fastTransform, p1Arr)
-                            path.moveTo(p1Arr[0], p1Arr[1])
+                            nativePath.moveTo(p1Arr[0], p1Arr[1])
+
                             for (idx in 1 until smooth.size) {
                                 cameraState.projectFast(smooth[idx].x, smooth[idx].y, smooth[idx].z, fastTransform, p1Arr)
-                                path.lineTo(p1Arr[0], p1Arr[1])
+                                nativePath.lineTo(p1Arr[0], p1Arr[1])
                             }
-                            if (entity.isClosed) path.close()
-                            drawPath(path, color, style = strokeStyle)
+                            if (entity.isClosed) {
+                                nativePath.close()
+                            }
+                            strokePaint.color = color.toArgb()
+                            strokePaint.strokeWidth = strokeWidthPx
+                            drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
                         }
                     }
                     is DxfEntity.Ellipse -> {
