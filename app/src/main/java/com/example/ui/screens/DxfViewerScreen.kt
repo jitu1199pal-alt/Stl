@@ -414,7 +414,7 @@ fun DxfViewerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .background(Color(0xFF0B1120))
+                        .background(Color(0xFF000000))
                 ) {
                     if (cadViewMode == CadViewMode.WEBGL_THREE_DXF) {
                         CadWebView(

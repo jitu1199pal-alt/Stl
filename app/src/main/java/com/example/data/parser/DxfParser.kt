@@ -277,6 +277,9 @@ object DxfParser {
         var currentSplineY = 0f
         var currentSplineZ = 0f
         var hasSplineX = false
+        var ellipseStartParam = 0f
+        var ellipseEndParam = (2 * Math.PI).toFloat()
+        var ellipseRatio = 0.5f
 
         fun resetEntityFields() {
             x1 = 0f; y1 = 0f; z1 = 0f
@@ -284,6 +287,9 @@ object DxfParser {
             x3 = 0f; y3 = 0f; z3 = 0f
             x4 = 0f; y4 = 0f; z4 = 0f
             radius = 0f; startAngle = 0f; endAngle = 0f
+            ellipseStartParam = 0f
+            ellipseEndParam = (2 * Math.PI).toFloat()
+            ellipseRatio = 0.5f
             textBuilder.clear()
             blockNameRef = ""
             insertScaleX = 1f; insertScaleY = 1f; insertScaleZ = 1f
@@ -495,9 +501,15 @@ object DxfParser {
                 }
                 "ELLIPSE" -> {
                     recordStat("ELLIPSE")
-                    val majorVec = if (x2 != 0f || y2 != 0f || z2 != 0f) Vector3D(x2, y2, z2) else Vector3D(radius.coerceAtLeast(1f), 0f, 0f)
-                    val ratio = if (radius in 0.001f..1f) radius else 0.5f
-                    addEntity(DxfEntity.Ellipse(currentLayer, Vector3D(x1, y1, z1), majorVec, ratio, startAngle, endAngle, resolvedColor))
+                    val majorVec = if (x2 != 0f || y2 != 0f || z2 != 0f) {
+                        Vector3D(x2, y2, z2)
+                    } else {
+                        Vector3D(radius.coerceAtLeast(1f), 0f, 0f)
+                    }
+                    val ratio = ellipseRatio.coerceIn(0.0001f, 1.0f)
+                    val sParam = ellipseStartParam
+                    val eParam = if (ellipseEndParam == 0f && ellipseStartParam == 0f) (2 * Math.PI).toFloat() else ellipseEndParam
+                    addEntity(DxfEntity.Ellipse(currentLayer, Vector3D(x1, y1, z1), majorVec, ratio, sParam, eParam, resolvedColor))
                 }
                 "INSERT" -> {
                     recordStat("INSERT")
@@ -695,14 +707,29 @@ object DxfParser {
                     13 -> x4 = value.toFloatOrNull() ?: x4
                     23 -> y4 = value.toFloatOrNull() ?: y4
                     33 -> z4 = value.toFloatOrNull() ?: z4
-                    40 -> radius = value.toFloatOrNull() ?: radius
+                    40 -> {
+                        radius = value.toFloatOrNull() ?: radius
+                        ellipseRatio = radius
+                    }
                     50 -> {
                         if (currentType == "INSERT") insertRotDeg = value.toFloatOrNull() ?: 0f
                         else startAngle = value.toFloatOrNull() ?: startAngle
                     }
                     51 -> endAngle = value.toFloatOrNull() ?: endAngle
-                    41 -> insertScaleX = value.toFloatOrNull() ?: 1f
-                    42 -> insertScaleY = value.toFloatOrNull() ?: 1f
+                    41 -> {
+                        if (currentType == "ELLIPSE") {
+                            ellipseStartParam = value.toFloatOrNull() ?: 0f
+                        } else {
+                            insertScaleX = value.toFloatOrNull() ?: 1f
+                        }
+                    }
+                    42 -> {
+                        if (currentType == "ELLIPSE") {
+                            ellipseEndParam = value.toFloatOrNull() ?: (2 * Math.PI).toFloat()
+                        } else {
+                            insertScaleY = value.toFloatOrNull() ?: 1f
+                        }
+                    }
                     43 -> insertScaleZ = value.toFloatOrNull() ?: 1f
                     2 -> if (currentType == "INSERT") blockNameRef = value
                     1, 3 -> textBuilder.append(value)

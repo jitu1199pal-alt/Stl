@@ -136,7 +136,7 @@ fun Dxf2DRenderView(
             )
 
             val layerColors = listOf(
-                Color(0xFF00E5FF), Color(0xFFFFD700), Color(0xFF10B981),
+                Color.White, Color(0xFF00E5FF), Color(0xFFFFD700), Color(0xFF10B981),
                 Color(0xFFF43F5E), Color(0xFFA855F7), Color(0xFF3B82F6)
             )
 
@@ -147,7 +147,7 @@ fun Dxf2DRenderView(
                     val r = (c ushr 16) and 0xFF
                     val g = (c ushr 8) and 0xFF
                     val b = c and 0xFF
-                    // Rule 4: Contrast Control - Invert black / dark vector strokes to solid white
+                    // Contrast Control - Invert black / dark vector strokes to solid white
                     val luminance = 0.299f * r + 0.587f * g + 0.114f * b
                     if (luminance < 75f || (r < 75 && g < 75 && b < 75)) {
                         return Color.White
@@ -155,17 +155,20 @@ fun Dxf2DRenderView(
                     return Color(red = r / 255f, green = g / 255f, blue = b / 255f, alpha = if (a > 0) a / 255f else 1f)
                 }
 
-                val upper = entity.layer.uppercase()
+                val upper = entity.layer.uppercase().trim()
                 return when {
-                    upper.contains("RED") || upper.contains("DIM") || upper.contains("TITLE") -> Color(0xFFEF4444)
-                    upper.contains("BLUE") || upper.contains("FRAME") || upper.contains("BOUND") -> Color(0xFF3B82F6)
-                    upper.contains("WHITE") || upper.contains("GEOM") || upper.contains("TORAN") || upper.contains("PILLAR") || upper.contains("CIRCLE") -> Color(0xFFFFFFFF)
-                    upper.contains("CYAN") -> Color(0xFF00E5FF)
+                    upper.contains("RED") || upper.contains("DIM") -> Color(0xFFEF4444)
+                    upper.contains("BLUE") || upper.contains("FRAME") -> Color(0xFF3B82F6)
                     upper.contains("YELLOW") -> Color(0xFFFFD700)
                     upper.contains("GREEN") -> Color(0xFF10B981)
+                    upper.contains("CYAN") -> Color(0xFF00E5FF)
+                    upper.contains("MAGENTA") -> Color(0xFFFF00FF)
+                    upper == "0" || upper.isEmpty() || upper.contains("WHITE") || upper.contains("GEOM") ||
+                    upper.contains("TORAN") || upper.contains("PILLAR") || upper.contains("CARV") ||
+                    upper.contains("JALI") || upper.contains("BORDER") || upper.contains("DEFPOINTS") -> Color.White
                     else -> {
                         val idx = model.layers.indexOf(entity.layer).coerceAtLeast(0)
-                        layerColors[idx % layerColors.size]
+                        if (idx == 0) Color.White else layerColors[idx % layerColors.size]
                     }
                 }
             }
@@ -236,11 +239,7 @@ fun Dxf2DRenderView(
                         }
                     }
                     is DxfEntity.Arc -> {
-                        cameraState.projectFast(entity.center.x, entity.center.y, entity.center.z, fastTransform, p1Arr)
-                        val cx = p1Arr[0]
-                        val cy = p1Arr[1]
                         val radiusPx = entity.radius * fastTransform.finalScale
-
                         if (radiusPx > 0.05f) {
                             val startAngle = entity.startAngleDeg
                             val endAngle = entity.endAngleDeg
@@ -251,47 +250,28 @@ fun Dxf2DRenderView(
                                 sweepAngle += 360f
                             }
 
-                            // Rule 1: Strict ARC Rendering - Differentiate an ARC from a CIRCLE.
-                            // Use canvas.drawArc() with useCenter = false.
-                            // Only render if sweepAngle > 0.05f (prevent rendering full circle where slight curves or degenerate arcs are)
                             if (sweepAngle > 0.05f) {
                                 strokePaint.color = color.toArgb()
                                 strokePaint.strokeWidth = strokeWidthPx
 
-                                if (abs(cameraState.pitchDeg) < 0.5f && abs(cameraState.yawDeg) < 0.5f) {
-                                    // 2D CAD Top View: native canvas.drawArc with useCenter = false
-                                    nativeArcRect.set(cx - radiusPx, cy - radiusPx, cx + radiusPx, cy + radiusPx)
-                                    // In CAD: angles are CCW with +Y up.
-                                    // In Android Canvas: angles are CW with +Y down.
-                                    // Screen start angle is -endAngle and sweep is sweepAngle.
-                                    drawContext.canvas.nativeCanvas.drawArc(
-                                        nativeArcRect,
-                                        -endAngle,
-                                        sweepAngle,
-                                        false,
-                                        strokePaint
-                                    )
-                                } else {
-                                    // 3D perspective orbit: smooth parametric curve with zero distortion
-                                    nativePath.reset()
-                                    val steps = max(24, (sweepAngle / 3f).toInt()).coerceAtMost(128)
-                                    val startRad = Math.toRadians(startAngle.toDouble())
-                                    val sweepRad = Math.toRadians(sweepAngle.toDouble())
+                                nativePath.reset()
+                                val steps = max(8, (sweepAngle / 3f).toInt()).coerceAtMost(72)
+                                val startRad = Math.toRadians(startAngle.toDouble())
+                                val sweepRad = Math.toRadians(sweepAngle.toDouble())
 
-                                    for (step in 0..steps) {
-                                        val t = step.toDouble() / steps.toDouble()
-                                        val ang = startRad + t * sweepRad
-                                        val ax = (entity.center.x + entity.radius * cos(ang)).toFloat()
-                                        val ay = (entity.center.y + entity.radius * sin(ang)).toFloat()
-                                        cameraState.projectFast(ax, ay, entity.center.z, fastTransform, p1Arr)
-                                        if (step == 0) {
-                                            nativePath.moveTo(p1Arr[0], p1Arr[1])
-                                        } else {
-                                            nativePath.lineTo(p1Arr[0], p1Arr[1])
-                                        }
+                                for (step in 0..steps) {
+                                    val t = step.toDouble() / steps.toDouble()
+                                    val ang = startRad + t * sweepRad
+                                    val ax = (entity.center.x + entity.radius * cos(ang)).toFloat()
+                                    val ay = (entity.center.y + entity.radius * sin(ang)).toFloat()
+                                    cameraState.projectFast(ax, ay, entity.center.z, fastTransform, p1Arr)
+                                    if (step == 0) {
+                                        nativePath.moveTo(p1Arr[0], p1Arr[1])
+                                    } else {
+                                        nativePath.lineTo(p1Arr[0], p1Arr[1])
                                     }
-                                    drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
                                 }
+                                drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
                             }
                         }
                     }
@@ -333,29 +313,43 @@ fun Dxf2DRenderView(
                         }
                     }
                     is DxfEntity.Ellipse -> {
-                        path.reset()
                         val majorLen = entity.majorAxis.length().toDouble()
-                        val minorLen = (majorLen * entity.axisRatio.toDouble()).coerceAtLeast(0.001)
-                        val rotAngle = atan2(entity.majorAxis.y.toDouble(), entity.majorAxis.x.toDouble())
-                        val cosR = cos(rotAngle)
-                        val sinR = sin(rotAngle)
+                        if (majorLen > 1e-5) {
+                            val minorLen = (majorLen * entity.axisRatio.toDouble()).coerceAtLeast(0.0001)
+                            val rotAngle = atan2(entity.majorAxis.y.toDouble(), entity.majorAxis.x.toDouble())
+                            val cosR = cos(rotAngle)
+                            val sinR = sin(rotAngle)
 
-                        val steps = 64
-                        for (step in 0..steps) {
-                            val theta = 2.0 * Math.PI * step / steps
-                            val lx = majorLen * cos(theta)
-                            val ly = minorLen * sin(theta)
-                            val wx = (entity.center.x + lx * cosR - ly * sinR).toFloat()
-                            val wy = (entity.center.y + lx * sinR + ly * cosR).toFloat()
-                            cameraState.projectFast(wx, wy, entity.center.z, fastTransform, p1Arr)
-                            if (step == 0) {
-                                path.moveTo(p1Arr[0], p1Arr[1])
-                            } else {
-                                path.lineTo(p1Arr[0], p1Arr[1])
+                            var sweep = entity.endParam - entity.startParam
+                            if (sweep < 0f) {
+                                sweep += (2 * Math.PI).toFloat()
                             }
+                            val isFullEllipse = abs(sweep - (2 * Math.PI).toFloat()) < 1e-3f || (entity.startParam == 0f && entity.endParam == 0f)
+                            val actualSweep = if (isFullEllipse) (2 * Math.PI).toFloat() else sweep
+
+                            val steps = max(16, ((actualSweep / (2 * Math.PI)) * 64).toInt()).coerceAtMost(96)
+                            nativePath.reset()
+
+                            for (step in 0..steps) {
+                                val t = entity.startParam + (step.toDouble() / steps.toDouble()) * actualSweep
+                                val lx = majorLen * cos(t)
+                                val ly = minorLen * sin(t)
+                                val wx = (entity.center.x + lx * cosR - ly * sinR).toFloat()
+                                val wy = (entity.center.y + lx * sinR + ly * cosR).toFloat()
+                                cameraState.projectFast(wx, wy, entity.center.z, fastTransform, p1Arr)
+                                if (step == 0) {
+                                    nativePath.moveTo(p1Arr[0], p1Arr[1])
+                                } else {
+                                    nativePath.lineTo(p1Arr[0], p1Arr[1])
+                                }
+                            }
+                            if (isFullEllipse) {
+                                nativePath.close()
+                            }
+                            strokePaint.color = color.toArgb()
+                            strokePaint.strokeWidth = strokeWidthPx
+                            drawContext.canvas.nativeCanvas.drawPath(nativePath, strokePaint)
                         }
-                        path.close()
-                        drawPath(path, color, style = strokeStyle)
                     }
                     is DxfEntity.TextEntity -> {
                         cameraState.projectFast(entity.position.x, entity.position.y, entity.position.z, fastTransform, p1Arr)

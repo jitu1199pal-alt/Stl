@@ -193,7 +193,7 @@
         };
 
         const LAYER_COLORS = [
-            '#00e5ff', '#ffd700', '#10b981', '#f43f5e', '#a855f7', '#3b82f6', '#ffffff'
+            '#ffffff', '#00e5ff', '#ffd700', '#10b981', '#f43f5e', '#a855f7', '#3b82f6'
         ];
 
         function resizeCanvas() {
@@ -282,7 +282,7 @@
                             blocks[currentBlock.name.toUpperCase()] = currentBlock;
                         }
                         currentBlock = null;
-                    } else if (['LINE', 'CIRCLE', 'ARC', 'LWPOLYLINE', 'POLYLINE', 'TEXT', 'MTEXT', 'SOLID', 'INSERT'].includes(val)) {
+                    } else if (['LINE', 'CIRCLE', 'ARC', 'LWPOLYLINE', 'POLYLINE', 'TEXT', 'MTEXT', 'SOLID', 'INSERT', 'ELLIPSE'].includes(val)) {
                         currentEntity = { type: val, layer: '0', points: [] };
                     }
                 } else if (currentBlock && code === 2 && !currentEntity) {
@@ -301,8 +301,14 @@
                         case 1:
                         case 3: currentEntity.text = (currentEntity.text || '') + val; break;
                         case 2: if (currentEntity.type === 'INSERT') currentEntity.blockName = val; break;
-                        case 41: currentEntity.scaleX = parseFloat(val) || 1; break;
-                        case 42: currentEntity.scaleY = parseFloat(val) || 1; break;
+                        case 41:
+                            if (currentEntity.type === 'ELLIPSE') currentEntity.startParam = parseFloat(val) || 0;
+                            else currentEntity.scaleX = parseFloat(val) || 1;
+                            break;
+                        case 42:
+                            if (currentEntity.type === 'ELLIPSE') currentEntity.endParam = parseFloat(val) || 6.2831853;
+                            else currentEntity.scaleY = parseFloat(val) || 1;
+                            break;
                     }
                     if (currentEntity.type === 'LWPOLYLINE' && code === 10) {
                         currentEntity.points.push({ x: currentEntity.x1, y: 0 });
@@ -459,14 +465,48 @@
                         ctx.stroke();
                     }
                 } else if (e.type === 'ARC') {
-                    const p = toScreen(e.x1, e.y1);
-                    const r = (e.r || 0) * p.scale;
-                    if (r > 0.5) {
-                        // CAD angles CCW +Y up -> canvas CW +Y down
-                        const sAngle = -e.endAngle * Math.PI / 180;
-                        const eAngle = -e.startAngle * Math.PI / 180;
+                    const r = (e.r || 0);
+                    if (r > 0.05) {
+                        let sweep = e.endAngle - e.startAngle;
+                        if (sweep < 0) sweep += 360;
+                        const steps = Math.max(8, Math.min(64, Math.floor(sweep / 4)));
+                        const startRad = e.startAngle * Math.PI / 180;
+                        const sweepRad = sweep * Math.PI / 180;
                         ctx.beginPath();
-                        ctx.arc(p.x, p.y, r, sAngle, eAngle);
+                        for (let s = 0; s <= steps; s++) {
+                            const ang = startRad + (s / steps) * sweepRad;
+                            const ax = e.x1 + r * Math.cos(ang);
+                            const ay = e.y1 + r * Math.sin(ang);
+                            const pt = toScreen(ax, ay);
+                            if (s === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+                        }
+                        ctx.stroke();
+                    }
+                } else if (e.type === 'ELLIPSE') {
+                    const majorLen = Math.hypot(e.x2 || 0, e.y2 || 0);
+                    if (majorLen > 1e-4) {
+                        const ratio = Math.max(0.001, Math.min(1.0, e.r || 0.5));
+                        const minorLen = majorLen * ratio;
+                        const rotAngle = Math.atan2(e.y2 || 0, e.x2 || 0);
+                        const cosR = Math.cos(rotAngle);
+                        const sinR = Math.sin(rotAngle);
+
+                        let sweep = (e.endParam || 6.2831853) - (e.startParam || 0);
+                        if (sweep < 0) sweep += 2 * Math.PI;
+                        const isFull = Math.abs(sweep - 2 * Math.PI) < 0.01;
+                        const steps = Math.max(16, Math.min(72, Math.floor(sweep / (2 * Math.PI) * 64)));
+
+                        ctx.beginPath();
+                        for (let s = 0; s <= steps; s++) {
+                            const t = (e.startParam || 0) + (s / steps) * sweep;
+                            const lx = majorLen * Math.cos(t);
+                            const ly = minorLen * Math.sin(t);
+                            const wx = e.x1 + lx * cosR - ly * sinR;
+                            const wy = e.y1 + lx * sinR + ly * cosR;
+                            const pt = toScreen(wx, wy);
+                            if (s === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+                        }
+                        if (isFull) ctx.closePath();
                         ctx.stroke();
                     }
                 } else if (e.points && e.points.length > 1) {
