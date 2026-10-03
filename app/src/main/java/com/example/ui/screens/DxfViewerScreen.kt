@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.components.TelemetryBadge
 import com.example.ui.render3d.CameraState
 import com.example.ui.render3d.Dxf2DRenderView
+import com.example.cad.ui.CadWebView
 import com.example.ui.viewmodel.ActiveModel
 import com.example.ui.viewmodel.MainViewModel
 
@@ -96,7 +97,7 @@ fun DxfViewerScreen(
     var showLayersSheet by remember { mutableStateOf(false) }
     var showTextsSheet by remember { mutableStateOf(false) }
     var showStatsSheet by remember { mutableStateOf(false) }
-    var cadViewMode by remember { mutableStateOf(CadViewMode.VECTOR_CRISP) }
+    var cadViewMode by remember { mutableStateOf(CadViewMode.WEBGL_THREE_DXF) }
     val sheetState = rememberModalBottomSheetState()
 
     // Automatically fit to screen whenever a DXF model is loaded or changed
@@ -138,14 +139,11 @@ fun DxfViewerScreen(
                             }
                         }
                         if (dxfModel != null) {
-                            val subtitleText = if (isDwgFile) {
-                                when (cadViewMode) {
-                                    CadViewMode.VECTOR_CRISP -> "Vector CAD Mode (${dxfModel.entities.size} Entities) • Zoom: ${(cameraState.zoom * 100).toInt()}%"
-                                    CadViewMode.CAD_DARK_HD -> "CAD Dark HD Mode • Zoom: ${(cameraState.zoom * 100).toInt()}%"
-                                    CadViewMode.ORIGINAL_PREVIEW -> "Original Preview • Zoom: ${(cameraState.zoom * 100).toInt()}%"
-                                }
-                            } else {
-                                "Entities: ${dxfModel.entities.size} • Layers: ${dxfModel.layers.size} • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                            val subtitleText = when (cadViewMode) {
+                                CadViewMode.WEBGL_THREE_DXF -> "⚡ WebGL Three.js Engine (${dxfModel.entities.size} Entities) • 100% AutoCAD Precision"
+                                CadViewMode.VECTOR_CRISP -> "Vector CAD Mode (${dxfModel.entities.size} Entities) • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                CadViewMode.CAD_DARK_HD -> "CAD Dark HD Mode • Zoom: ${(cameraState.zoom * 100).toInt()}%"
+                                CadViewMode.ORIGINAL_PREVIEW -> "Original Preview • Zoom: ${(cameraState.zoom * 100).toInt()}%"
                             }
                             Text(
                                 text = subtitleText,
@@ -237,19 +235,25 @@ fun DxfViewerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CadModeChip(
-                                title = "📐 Clear Vector (वेक्टर साफ़)",
-                                isSelected = cadViewMode == CadViewMode.VECTOR_CRISP,
+                                title = "⚡ WebGL (AutoCAD)",
+                                isSelected = cadViewMode == CadViewMode.WEBGL_THREE_DXF,
                                 accentColor = Color(0xFF00E5FF),
+                                onClick = { cadViewMode = CadViewMode.WEBGL_THREE_DXF }
+                            )
+                            CadModeChip(
+                                title = "📐 2D Canvas",
+                                isSelected = cadViewMode == CadViewMode.VECTOR_CRISP,
+                                accentColor = Color(0xFF10B981),
                                 onClick = { cadViewMode = CadViewMode.VECTOR_CRISP }
                             )
                             CadModeChip(
-                                title = "✨ CAD Dark HD",
+                                title = "✨ Dark HD",
                                 isSelected = cadViewMode == CadViewMode.CAD_DARK_HD,
-                                accentColor = Color(0xFF10B981),
+                                accentColor = Color(0xFFA855F7),
                                 onClick = { cadViewMode = CadViewMode.CAD_DARK_HD }
                             )
                             CadModeChip(
-                                title = "📄 Original",
+                                title = "📄 Preview",
                                 isSelected = cadViewMode == CadViewMode.ORIGINAL_PREVIEW,
                                 accentColor = Color(0xFFFFD700),
                                 onClick = { cadViewMode = CadViewMode.ORIGINAL_PREVIEW }
@@ -292,14 +296,21 @@ fun DxfViewerScreen(
                         .weight(1f)
                         .background(Color(0xFF0B1120))
                 ) {
-                    Dxf2DRenderView(
-                        model = dxfModel,
-                        visibleLayers = visibleLayers,
-                        cameraState = cameraState,
-                        showGrid = showGrid,
-                        cadViewMode = cadViewMode,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    if (cadViewMode == CadViewMode.WEBGL_THREE_DXF) {
+                        CadWebView(
+                            model = dxfModel,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Dxf2DRenderView(
+                            model = dxfModel,
+                            visibleLayers = visibleLayers,
+                            cameraState = cameraState,
+                            showGrid = showGrid,
+                            cadViewMode = cadViewMode,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
                     // Overlay Dimensions & Zoom Badges (Top Left)
                     Column(
@@ -309,6 +320,12 @@ fun DxfViewerScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TelemetryBadge(
+                                label = "ENGINE",
+                                value = if (cadViewMode == CadViewMode.WEBGL_THREE_DXF) "WEBGL" else "2D VEC",
+                                unit = "GPU",
+                                accentColor = Color(0xFF00E5FF)
+                            )
                             TelemetryBadge(
                                 label = "FORMAT",
                                 value = if (isDwgFile) "DWG" else "DXF",

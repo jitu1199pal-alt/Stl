@@ -33,8 +33,9 @@ import kotlin.math.min
 import kotlin.math.sin
 
 enum class CadViewMode {
-    VECTOR_CRISP,   // Razor-sharp 100% vector lines on black CAD canvas (zero blur, identical to GstarCAD!)
-    CAD_DARK_HD,    // High-contrast inverted CAD bitmap with sharpened white & colored lines
+    WEBGL_THREE_DXF, // High-performance Three.js WebGL WebView (0% distortion, identical to AutoCAD)
+    VECTOR_CRISP,    // Razor-sharp 100% vector lines on black CAD canvas (zero blur, identical to GstarCAD!)
+    CAD_DARK_HD,     // High-contrast inverted CAD bitmap with sharpened white & colored lines
     ORIGINAL_PREVIEW // Original embedded preview bitmap
 }
 
@@ -195,7 +196,7 @@ fun Dxf2DRenderView(
             val activeBitmap = when (cadViewMode) {
                 CadViewMode.CAD_DARK_HD -> model.enhancedBitmap ?: model.previewBitmap
                 CadViewMode.ORIGINAL_PREVIEW -> model.previewBitmap
-                CadViewMode.VECTOR_CRISP -> if (model.entities.isEmpty()) (model.enhancedBitmap ?: model.previewBitmap) else null
+                CadViewMode.VECTOR_CRISP, CadViewMode.WEBGL_THREE_DXF -> if (model.entities.isEmpty()) (model.enhancedBitmap ?: model.previewBitmap) else null
             }
 
             activeBitmap?.let { bitmap ->

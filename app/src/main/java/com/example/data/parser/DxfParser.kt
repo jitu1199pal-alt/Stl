@@ -147,8 +147,14 @@ data class DxfModel(
     val dwgVersion: String? = null,
     val debugReport: String? = null,
     val fileSize: Long = 0L,
-    val blockCount: Int = 0
-)
+    val blockCount: Int = 0,
+    val rawContent: String? = null
+) {
+    fun getRawOrGeneratedDxf(): String {
+        if (!rawContent.isNullOrBlank()) return rawContent
+        return DxfParser.generateDxfText(this)
+    }
+}
 
 object DxfParser {
 
@@ -187,7 +193,7 @@ object DxfParser {
     }
 
     fun parse(fileName: String, content: String): DxfModel {
-        return parseStream(fileName, content.byteInputStream())
+        return parseStream(fileName, content.byteInputStream()).copy(rawContent = content)
     }
 
     fun parseStream(fileName: String, inputStream: InputStream): DxfModel {
@@ -701,9 +707,66 @@ object DxfParser {
                 debugReport = "Selected file:\n$name\n\nFile size:\n$fileSize bytes\n\nEntity count:\n0\n\nLayer count:\n1\n\nBlock count:\n0\n\nModel bounds:\n[0.0, 100.0, 0.0, 100.0]\n\nEntity types:\nLINE = 0\nARC = 0\nCIRCLE = 0\nLWPOLYLINE = 0\nPOLYLINE = 0\nSPLINE = 0\nHATCH = 0\nINSERT = 0\nTEXT = 0\nMTEXT = 0\nDIMENSION = 0"
             )
         }
+        val rawText = try {
+            String(bytes, StandardCharsets.UTF_8)
+        } catch (_: Exception) {
+            null
+        }
         val model = parseStream(name, bytes.inputStream())
         val updatedReport = model.debugReport?.replace("File size:\n0 bytes", "File size:\n$fileSize bytes") ?: model.debugReport
-        return model.copy(fileSize = fileSize, debugReport = updatedReport)
+        return model.copy(fileSize = fileSize, debugReport = updatedReport, rawContent = rawText)
+    }
+
+    /**
+     * Serializes DxfModel entities into standard AutoCAD DXF ASCII format.
+     */
+    fun generateDxfText(model: DxfModel): String {
+        val sb = StringBuilder(65536)
+        sb.append("0\nSECTION\n2\nHEADER\n0\nENDSEC\n")
+        sb.append("0\nSECTION\n2\nENTITIES\n")
+        for (e in model.entities) {
+            when (e) {
+                is DxfEntity.Line -> {
+                    sb.append("0\nLINE\n8\n${e.layer}\n")
+                    sb.append("10\n${e.start.x}\n20\n${e.start.y}\n30\n${e.start.z}\n")
+                    sb.append("11\n${e.end.x}\n21\n${e.end.y}\n31\n${e.end.z}\n")
+                }
+                is DxfEntity.Circle -> {
+                    sb.append("0\nCIRCLE\n8\n${e.layer}\n")
+                    sb.append("10\n${e.center.x}\n20\n${e.center.y}\n30\n${e.center.z}\n")
+                    sb.append("40\n${e.radius}\n")
+                }
+                is DxfEntity.Arc -> {
+                    sb.append("0\nARC\n8\n${e.layer}\n")
+                    sb.append("10\n${e.center.x}\n20\n${e.center.y}\n30\n${e.center.z}\n")
+                    sb.append("40\n${e.radius}\n")
+                    sb.append("50\n${e.startAngleDeg}\n51\n${e.endAngleDeg}\n")
+                }
+                is DxfEntity.Polyline -> {
+                    sb.append("0\nLWPOLYLINE\n8\n${e.layer}\n")
+                    sb.append("90\n${e.points.size}\n")
+                    sb.append("70\n${if (e.isClosed) 1 else 0}\n")
+                    for (p in e.points) {
+                        sb.append("10\n${p.x}\n20\n${p.y}\n")
+                    }
+                }
+                is DxfEntity.Spline -> {
+                    sb.append("0\nSPLINE\n8\n${e.layer}\n")
+                    sb.append("70\n${if (e.isClosed) 1 else 0}\n")
+                    for (p in e.controlPoints) {
+                        sb.append("10\n${p.x}\n20\n${p.y}\n30\n${p.z}\n")
+                    }
+                }
+                is DxfEntity.TextEntity -> {
+                    sb.append("0\nTEXT\n8\n${e.layer}\n")
+                    sb.append("10\n${e.position.x}\n20\n${e.position.y}\n30\n${e.position.z}\n")
+                    sb.append("40\n${e.height}\n1\n${e.text}\n50\n${e.rotationDeg}\n")
+                }
+                else -> {}
+            }
+        }
+        sb.append("0\nENDSEC\n0\nEOF\n")
+        return sb.toString()
     }
 
     /**
