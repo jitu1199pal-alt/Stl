@@ -166,13 +166,13 @@ fun HomeScreen(
                 title = {
                     Column {
                         Text(
-                            text = "CAD View Pro",
+                            text = "Toolpath Simulation",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.White
                         )
                         Text(
-                            text = "Professional 2D/3D DWG & DXF CAD Viewer",
+                            text = "3D CNC Toolpath, STL Mesh & DXF Viewer",
                             fontSize = 11.sp,
                             color = Color(0xFF94A3B8)
                         )

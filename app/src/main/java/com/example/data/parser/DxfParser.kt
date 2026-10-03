@@ -5,7 +5,9 @@ import com.example.ui.render3d.Vector3D
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
+import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.util.TreeMap
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -180,7 +182,6 @@ object DxfParser {
             50 -> 0xFF7FFF00.toInt()
             else -> {
                 if (aci in 1..255) {
-                    // Standard AutoCAD 256 color approximation
                     val h = (aci % 24) * 15f
                     val s = 1.0f
                     val v = 1.0f
@@ -193,18 +194,47 @@ object DxfParser {
     }
 
     fun parse(fileName: String, content: String): DxfModel {
-        return parseStream(fileName, content.byteInputStream()).copy(rawContent = content)
+        return parseStream(fileName, content.byteInputStream(), StandardCharsets.UTF_8).copy(rawContent = content)
     }
 
-    fun parseStream(fileName: String, inputStream: InputStream): DxfModel {
-        val reader = BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8), 262144)
+    /**
+     * Safe group reader that reads (code, value) pairs without risk of phase desynchronization.
+     */
+    private class GroupReader(stream: InputStream, charset: Charset) {
+        private val reader = BufferedReader(InputStreamReader(stream, charset), 262144)
+
+        fun nextGroup(): Pair<Int, String>? {
+            var code: Int? = null
+            while (true) {
+                val line = reader.readLine() ?: return null
+                val clean = line.replace("\uFEFF", "").trim()
+                if (clean.isEmpty()) continue
+                val parsed = clean.toIntOrNull()
+                if (parsed != null) {
+                    code = parsed
+                    break
+                }
+                // If line is not an integer, skip it to prevent phase shift
+            }
+            val valLine = reader.readLine() ?: return null
+            return Pair(code!!, valLine.trim())
+        }
+    }
+
+    fun parseStream(
+        fileName: String,
+        inputStream: InputStream,
+        charset: Charset = StandardCharsets.UTF_8
+    ): DxfModel {
+        val groupReader = GroupReader(inputStream, charset)
         val modelEntities = ArrayList<DxfEntity>(4096)
         val paperEntities = ArrayList<DxfEntity>(512)
         val layerSet = LinkedHashSet<String>()
+        val layerColorsMap = HashMap<String, Int>()
         val stats = mutableMapOf<String, Int>()
 
-        // Block definition storage: blockName -> BlockDefinition
-        val blockDefinitions = HashMap<String, BlockDefinition>()
+        // Case-insensitive block definitions
+        val blockDefinitions = TreeMap<String, BlockDefinition>(String.CASE_INSENSITIVE_ORDER)
         var currentBlockName = ""
         var currentBlockBaseX = 0f
         var currentBlockBaseY = 0f
@@ -212,19 +242,21 @@ object DxfParser {
         var currentBlockEntities: MutableList<DxfEntity>? = null
 
         var currentSection = ""
+        var currentTable = ""
+        var tableCurrentLayerName = ""
         var currentType = ""
         var currentLayer = "0"
         var isPaperSpace = false
         var entityColor: Int? = null
 
-        // Coordinates
+        // Coordinates & attributes
         var x1 = 0f; var y1 = 0f; var z1 = 0f
         var x2 = 0f; var y2 = 0f; var z2 = 0f
         var x3 = 0f; var y3 = 0f; var z3 = 0f
         var x4 = 0f; var y4 = 0f; var z4 = 0f
         var radius = 0f
         var startAngle = 0f; var endAngle = 0f
-        var textValue = ""
+        val textBuilder = StringBuilder()
         var blockNameRef = ""
         var insertScaleX = 1f; var insertScaleY = 1f; var insertScaleZ = 1f
         var insertRotDeg = 0f
@@ -252,7 +284,7 @@ object DxfParser {
             x3 = 0f; y3 = 0f; z3 = 0f
             x4 = 0f; y4 = 0f; z4 = 0f
             radius = 0f; startAngle = 0f; endAngle = 0f
-            textValue = ""
+            textBuilder.clear()
             blockNameRef = ""
             insertScaleX = 1f; insertScaleY = 1f; insertScaleZ = 1f
             insertRotDeg = 0f
@@ -307,6 +339,7 @@ object DxfParser {
 
             for (src in blockDef.entities) {
                 val effectiveLayer = if (src.layer == "0") parentLayer else src.layer
+                if (effectiveLayer.isNotBlank()) layerSet.add(effectiveLayer)
 
                 when (src) {
                     is DxfEntity.Line -> {
@@ -366,23 +399,29 @@ object DxfParser {
         fun finalizeCurrentEntity() {
             if (currentLayer.isNotBlank()) layerSet.add(currentLayer)
 
+            val resolvedColor = entityColor ?: layerColorsMap[currentLayer]
+
             when (currentType) {
                 "LINE" -> {
                     recordStat("LINE")
-                    val entity = DxfEntity.Line(currentLayer, Vector3D(x1, y1, z1), Vector3D(x2, y2, z2), entityColor)
+                    val entity = DxfEntity.Line(currentLayer, Vector3D(x1, y1, z1), Vector3D(x2, y2, z2), resolvedColor)
                     addEntity(entity)
+                }
+                "POINT" -> {
+                    recordStat("POINT")
+                    addEntity(DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius = 0.5f, color = resolvedColor))
                 }
                 "CIRCLE" -> {
                     if (radius > 0f) {
                         recordStat("CIRCLE")
-                        val entity = DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius, entityColor)
+                        val entity = DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius, resolvedColor)
                         addEntity(entity)
                     }
                 }
                 "ARC" -> {
                     if (radius > 0f) {
                         recordStat("ARC")
-                        val entity = DxfEntity.Arc(currentLayer, Vector3D(x1, y1, z1), radius, startAngle, endAngle, entityColor)
+                        val entity = DxfEntity.Arc(currentLayer, Vector3D(x1, y1, z1), radius, startAngle, endAngle, resolvedColor)
                         addEntity(entity)
                     }
                 }
@@ -395,7 +434,7 @@ object DxfParser {
                         recordStat("LWPOLYLINE")
                         val smoothPoints = expandPolylineWithBulges(rawPolyVertices, polyClosed)
                         if (smoothPoints.isNotEmpty()) {
-                            val entity = DxfEntity.Polyline(currentLayer, smoothPoints, polyClosed, entityColor)
+                            val entity = DxfEntity.Polyline(currentLayer, smoothPoints, polyClosed, resolvedColor)
                             addEntity(entity)
                         }
                     }
@@ -407,20 +446,18 @@ object DxfParser {
                     }
                     if (splinePoints.isNotEmpty()) {
                         recordStat("SPLINE")
-                        val entity = DxfEntity.Spline(currentLayer, ArrayList(splinePoints), isClosed = polyClosed, color = entityColor)
+                        val entity = DxfEntity.Spline(currentLayer, ArrayList(splinePoints), isClosed = polyClosed, color = resolvedColor)
                         addEntity(entity)
                     }
                 }
                 "SOLID", "TRACE", "3DFACE" -> {
                     recordStat("SOLID")
-                    // In AutoCAD DXF, 4-point SOLID/TRACE/3DFACE points are ordered P1, P2, P4, P3
-                    // Reordering P3 and P4 prevents bowtie figure-8 self-intersection!
                     val pts = if ((x3 == x4 && y3 == y4) || (x4 == 0f && y4 == 0f && z4 == 0f)) {
                         listOf(Vector3D(x1, y1, z1), Vector3D(x2, y2, z2), Vector3D(x3, y3, z3))
                     } else {
                         listOf(Vector3D(x1, y1, z1), Vector3D(x2, y2, z2), Vector3D(x4, y4, z4), Vector3D(x3, y3, z3))
                     }
-                    addEntity(DxfEntity.Solid(currentLayer, pts, entityColor))
+                    addEntity(DxfEntity.Solid(currentLayer, pts, resolvedColor))
                 }
                 "HATCH" -> {
                     recordStat("HATCH")
@@ -428,17 +465,15 @@ object DxfParser {
                         hatchLoops.add(currentHatchLoop)
                     }
                     if (hatchLoops.isNotEmpty()) {
-                        addEntity(DxfEntity.Hatch(currentLayer, hatchLoops, isHatchSolid, entityColor))
+                        addEntity(DxfEntity.Hatch(currentLayer, hatchLoops, isHatchSolid, resolvedColor))
                     }
                 }
-                "POINT" -> {
-                    recordStat("POINT")
-                    addEntity(DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius = 0.5f, color = entityColor))
-                }
                 "TEXT", "MTEXT" -> {
-                    if (textValue.isNotBlank()) {
+                    val txt = textBuilder.toString().trim()
+                    if (txt.isNotBlank()) {
                         recordStat(if (currentType == "MTEXT") "MTEXT" else "TEXT")
-                        addEntity(DxfEntity.TextEntity(currentLayer, Vector3D(x1, y1, z1), textValue, radius.coerceAtLeast(2f), rotationDeg = startAngle, color = entityColor))
+                        val h = if (radius > 0f) radius else 2.5f
+                        addEntity(DxfEntity.TextEntity(currentLayer, Vector3D(x1, y1, z1), txt, h, rotationDeg = startAngle, color = resolvedColor))
                     }
                 }
                 "DIMENSION" -> {
@@ -448,34 +483,34 @@ object DxfParser {
                         defPoint1 = Vector3D(x1, y1, z1),
                         defPoint2 = Vector3D(x2, y2, z2),
                         textPoint = Vector3D(x3, y3, z3),
-                        text = textValue,
-                        color = entityColor
+                        text = textBuilder.toString().trim(),
+                        color = resolvedColor
                     ))
                 }
                 "LEADER" -> {
                     recordStat("LEADER")
                     if (splinePoints.isNotEmpty()) {
-                        addEntity(DxfEntity.Leader(currentLayer, ArrayList(splinePoints), textValue, entityColor))
+                        addEntity(DxfEntity.Leader(currentLayer, ArrayList(splinePoints), textBuilder.toString().trim(), resolvedColor))
                     }
                 }
                 "ELLIPSE" -> {
                     recordStat("ELLIPSE")
                     val majorVec = if (x2 != 0f || y2 != 0f || z2 != 0f) Vector3D(x2, y2, z2) else Vector3D(radius.coerceAtLeast(1f), 0f, 0f)
                     val ratio = if (radius in 0.001f..1f) radius else 0.5f
-                    addEntity(DxfEntity.Ellipse(currentLayer, Vector3D(x1, y1, z1), majorVec, ratio, startAngle, endAngle, entityColor))
+                    addEntity(DxfEntity.Ellipse(currentLayer, Vector3D(x1, y1, z1), majorVec, ratio, startAngle, endAngle, resolvedColor))
                 }
                 "INSERT" -> {
                     recordStat("INSERT")
-                    val block = blockDefinitions[blockNameRef]
+                    val block = blockDefinitions[blockNameRef] ?: blockDefinitions[blockNameRef.uppercase()]
                     if (block != null) {
                         expandBlock(
                             blockDef = block,
                             insX = x1,
                             insY = y1,
                             insZ = z1,
-                            scX = insertScaleX,
-                            scY = insertScaleY,
-                            scZ = insertScaleZ,
+                            scX = if (insertScaleX != 0f) insertScaleX else 1f,
+                            scY = if (insertScaleY != 0f) insertScaleY else 1f,
+                            scZ = if (insertScaleZ != 0f) insertScaleZ else 1f,
                             rotDeg = insertRotDeg,
                             parentLayer = currentLayer,
                             depth = 0
@@ -492,11 +527,10 @@ object DxfParser {
             resetEntityFields()
         }
 
-        var lineCode = reader.readLine()
-        while (lineCode != null) {
-            val lineValue = reader.readLine() ?: break
-            val code = lineCode.trim().toIntOrNull() ?: -1
-            val value = lineValue.trim()
+        while (true) {
+            val group = groupReader.nextGroup() ?: break
+            val code = group.first
+            val value = group.second
 
             if (code == 0) {
                 // Next entity or section structural token
@@ -505,23 +539,40 @@ object DxfParser {
                 }
 
                 when (value) {
-                    "SECTION" -> currentSection = ""
+                    "SECTION" -> {
+                        currentSection = ""
+                    }
                     "ENDSEC" -> {
                         currentSection = ""
                         currentType = ""
+                        currentTable = ""
+                    }
+                    "TABLE" -> {
+                        currentTable = ""
+                    }
+                    "ENDTAB" -> {
+                        currentTable = ""
+                        tableCurrentLayerName = ""
                     }
                     "BLOCK" -> {
                         recordStat("BLOCK")
                         currentType = "BLOCK"
                         currentBlockEntities = ArrayList(256)
+                        currentBlockName = ""
+                        currentBlockBaseX = 0f
+                        currentBlockBaseY = 0f
+                        currentBlockBaseZ = 0f
                     }
                     "ENDBLK" -> {
+                        finalizeCurrentEntity()
                         if (currentBlockName.isNotBlank() && currentBlockEntities != null) {
-                            blockDefinitions[currentBlockName] = BlockDefinition(
+                            val def = BlockDefinition(
                                 name = currentBlockName,
                                 basePoint = Vector3D(currentBlockBaseX, currentBlockBaseY, currentBlockBaseZ),
                                 entities = currentBlockEntities ?: emptyList()
                             )
+                            blockDefinitions[currentBlockName] = def
+                            blockDefinitions[currentBlockName.uppercase()] = def
                         }
                         currentBlockEntities = null
                         currentBlockName = ""
@@ -546,6 +597,23 @@ object DxfParser {
                 }
             } else if (code == 2 && currentSection.isEmpty()) {
                 currentSection = value
+            } else if (code == 2 && currentSection == "TABLES" && currentTable.isEmpty()) {
+                currentTable = value
+            } else if (currentSection == "TABLES" && currentTable == "LAYER") {
+                when (code) {
+                    2 -> {
+                        if (value.isNotBlank()) {
+                            layerSet.add(value)
+                            tableCurrentLayerName = value
+                        }
+                    }
+                    62 -> {
+                        val aci = kotlin.math.abs(value.toIntOrNull() ?: 7)
+                        if (tableCurrentLayerName.isNotBlank()) {
+                            layerColorsMap[tableCurrentLayerName] = aciToColor(aci)
+                        }
+                    }
+                }
             } else if (currentType == "BLOCK") {
                 when (code) {
                     2 -> currentBlockName = value
@@ -587,7 +655,7 @@ object DxfParser {
                     }
                     20 -> currentSplineY = value.toFloatOrNull() ?: 0f
                     30 -> currentSplineZ = value.toFloatOrNull() ?: 0f
-                    1 -> textValue = value
+                    1, 3 -> textBuilder.append(value)
                 }
             } else if (currentType == "HATCH") {
                 when (code) {
@@ -596,7 +664,6 @@ object DxfParser {
                     420 -> entityColor = (value.toIntOrNull() ?: 0) or 0xFF000000.toInt()
                     70 -> isHatchSolid = (value == "1")
                     92 -> {
-                        // Boundary loop start
                         if (currentHatchLoop.isNotEmpty()) {
                             hatchLoops.add(currentHatchLoop)
                             currentHatchLoop = ArrayList()
@@ -638,20 +705,24 @@ object DxfParser {
                     42 -> insertScaleY = value.toFloatOrNull() ?: 1f
                     43 -> insertScaleZ = value.toFloatOrNull() ?: 1f
                     2 -> if (currentType == "INSERT") blockNameRef = value
-                    1 -> textValue = value
+                    1, 3 -> textBuilder.append(value)
                 }
             }
-
-            lineCode = reader.readLine()
         }
         finalizeCurrentEntity()
 
-        // Choose entities to render: prefer Model Space entities. If none, fallback to Paper Space
-        val finalEntities = if (modelEntities.isNotEmpty()) modelEntities else paperEntities
+        // Choose entities to render: prefer Model Space, then Paper Space, then Block definitions
+        var finalEntities: List<DxfEntity> = if (modelEntities.isNotEmpty()) modelEntities else paperEntities
+        if (finalEntities.isEmpty() && blockDefinitions.isNotEmpty()) {
+            finalEntities = blockDefinitions.values.flatMap { it.entities }
+        }
+
         val bounds = computeRobustBounds(finalEntities)
         val sortedLayers = if (layerSet.isEmpty()) listOf("0") else layerSet.toList().sorted()
         val standardKeys = listOf("LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE", "SPLINE", "HATCH", "INSERT", "TEXT", "MTEXT", "DIMENSION")
         val completeStats = standardKeys.associateWith { stats[it] ?: 0 } + stats
+
+        val detectedTexts = finalEntities.filterIsInstance<DxfEntity.TextEntity>().map { it.text.trim() }.filter { it.isNotBlank() }.distinct()
 
         val debugReport = buildString {
             appendLine("Selected file:")
@@ -684,6 +755,7 @@ object DxfParser {
             layers = sortedLayers,
             bounds = bounds,
             totalEntityCount = finalEntities.size,
+            detectedTexts = detectedTexts,
             entityStats = completeStats,
             debugReport = debugReport,
             blockCount = blockDefinitions.size
@@ -704,15 +776,29 @@ object DxfParser {
                 layers = listOf("0"),
                 bounds = BoundingBox3D(0f, 100f, 0f, 100f, 0f, 0f),
                 fileSize = fileSize,
-                debugReport = "Selected file:\n$name\n\nFile size:\n$fileSize bytes\n\nEntity count:\n0\n\nLayer count:\n1\n\nBlock count:\n0\n\nModel bounds:\n[0.0, 100.0, 0.0, 100.0]\n\nEntity types:\nLINE = 0\nARC = 0\nCIRCLE = 0\nLWPOLYLINE = 0\nPOLYLINE = 0\nSPLINE = 0\nHATCH = 0\nINSERT = 0\nTEXT = 0\nMTEXT = 0\nDIMENSION = 0"
+                debugReport = "Selected file:\n$name\n\nFile size:\n$fileSize bytes\n\nEntity count:\n0\n\nLayer count:\n1\n\nBlock count:\n0\n\nModel bounds:\n[0.0, 100.0, 0.0, 100.0]"
             )
         }
-        val rawText = try {
-            String(bytes, StandardCharsets.UTF_8)
-        } catch (_: Exception) {
-            null
+
+        // Automatic charset detection
+        val charset = when {
+            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> StandardCharsets.UTF_16LE
+            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> StandardCharsets.UTF_16BE
+            bytes.size >= 4 && bytes[1] == 0.toByte() && bytes[3] == 0.toByte() -> StandardCharsets.UTF_16LE
+            else -> StandardCharsets.UTF_8
         }
-        val model = parseStream(name, bytes.inputStream())
+
+        var rawText: String? = null
+        try {
+            rawText = String(bytes, charset)
+        } catch (_: Exception) {
+            try {
+                rawText = String(bytes, StandardCharsets.ISO_8859_1)
+            } catch (_: Exception) {}
+        }
+
+        val effectiveCharset = if (rawText != null) charset else StandardCharsets.ISO_8859_1
+        val model = parseStream(name, bytes.inputStream(), effectiveCharset)
         val updatedReport = model.debugReport?.replace("File size:\n0 bytes", "File size:\n$fileSize bytes") ?: model.debugReport
         return model.copy(fileSize = fileSize, debugReport = updatedReport, rawContent = rawText)
     }
@@ -750,19 +836,26 @@ object DxfParser {
                         sb.append("10\n${p.x}\n20\n${p.y}\n")
                     }
                 }
-                is DxfEntity.Spline -> {
-                    sb.append("0\nSPLINE\n8\n${e.layer}\n")
-                    sb.append("70\n${if (e.isClosed) 1 else 0}\n")
-                    for (p in e.controlPoints) {
-                        sb.append("10\n${p.x}\n20\n${p.y}\n30\n${p.z}\n")
-                    }
-                }
                 is DxfEntity.TextEntity -> {
                     sb.append("0\nTEXT\n8\n${e.layer}\n")
                     sb.append("10\n${e.position.x}\n20\n${e.position.y}\n30\n${e.position.z}\n")
-                    sb.append("40\n${e.height}\n1\n${e.text}\n50\n${e.rotationDeg}\n")
+                    sb.append("40\n${e.height}\n")
+                    sb.append("50\n${e.rotationDeg}\n")
+                    sb.append("1\n${e.text}\n")
                 }
-                else -> {}
+                is DxfEntity.Solid -> {
+                    sb.append("0\nSOLID\n8\n${e.layer}\n")
+                    if (e.points.size >= 3) {
+                        sb.append("10\n${e.points[0].x}\n20\n${e.points[0].y}\n30\n${e.points[0].z}\n")
+                        sb.append("11\n${e.points[1].x}\n21\n${e.points[1].y}\n31\n${e.points[1].z}\n")
+                        sb.append("12\n${e.points[2].x}\n22\n${e.points[2].y}\n32\n${e.points[2].z}\n")
+                        val p4 = if (e.points.size >= 4) e.points[3] else e.points[2]
+                        sb.append("13\n${p4.x}\n23\n${p4.y}\n33\n${p4.z}\n")
+                    }
+                }
+                else -> {
+                    // Lines fallback
+                }
             }
         }
         sb.append("0\nENDSEC\n0\nEOF\n")
@@ -770,33 +863,20 @@ object DxfParser {
     }
 
     /**
-     * Expands AutoCAD polylines that have bulge values (group code 42) into smooth circular arcs.
-     * In AutoCAD DXF, bulge b = tan(included_angle / 4).
-     * If b > 0, the arc curves to the LEFT of the line segment from v1 to v2.
-     * If b < 0, the arc curves to the RIGHT.
-     *
-     * Exact mathematically derived arc formula:
-     * theta = 4.0 * atan(b)
-     * u = (v2 - v1) / chord
-     * n = (-u.y, u.x) (left normal)
-     * Point(alpha) = midpoint + u * along(alpha) + n * height(alpha)
+     * Expands a polyline segment with bulge arcs mathematically.
      */
-    fun expandPolylineWithBulges(
-        vertices: List<RawVertex>,
-        isClosed: Boolean
-    ): List<Vector3D> {
+    fun expandPolylineWithBulges(vertices: List<RawVertex>, isClosed: Boolean): List<Vector3D> {
         if (vertices.isEmpty()) return emptyList()
         if (vertices.size == 1) return listOf(Vector3D(vertices[0].x, vertices[0].y, vertices[0].z))
 
-        val result = ArrayList<Vector3D>(vertices.size * 16)
-        val numSegments = if (isClosed) vertices.size else vertices.size - 1
+        val result = ArrayList<Vector3D>(vertices.size * 4)
+        val count = if (isClosed) vertices.size else vertices.size - 1
 
-        for (i in 0 until numSegments) {
+        for (i in 0 until count) {
             val v1 = vertices[i]
             val v2 = vertices[(i + 1) % vertices.size]
             val b = v1.bulge
 
-            // Add starting vertex of this segment
             result.add(Vector3D(v1.x, v1.y, v1.z))
 
             // If segment has a curved bulge, interpolate mathematically exact circular arc
@@ -847,14 +927,11 @@ object DxfParser {
     }
 
     /**
-     * Interpolates AutoCAD SPLINE vertices smoothly without zig-zag ringing or overshoots.
-     * For densely sampled vertices (>12 points), vertices are kept pristine with 0% distortion.
-     * For sparse control points, Chaikin's corner-cutting / uniform B-spline subdivision is used,
-     * which is mathematically guaranteed to stay strictly within the convex hull with zero overshoot.
+     * Interpolates AutoCAD SPLINE vertices smoothly.
      */
     fun interpolateSpline(points: List<Vector3D>, isClosed: Boolean): List<Vector3D> {
         if (points.size <= 2) return points
-        if (points.size >= 16) return points // Already high-precision vertices, preserve 1:1 AutoCAD contour!
+        if (points.size >= 16) return points
 
         var current = points
         repeat(3) {
@@ -896,21 +973,17 @@ object DxfParser {
         cosR: Float,
         sinR: Float
     ): Vector3D {
-        // 1. Subtract base point
         val relX = p.x - baseX
         val relY = p.y - baseY
         val relZ = p.z - baseZ
 
-        // 2. Scale
         val sx = relX * scaleX
         val sy = relY * scaleY
         val sz = relZ * scaleZ
 
-        // 3. Rotate around Z
         val rx = sx * cosR - sy * sinR
         val ry = sx * sinR + sy * cosR
 
-        // 4. Translate by insertion point
         return Vector3D(rx + insertX, ry + insertY, sz + insertZ)
     }
 
@@ -927,15 +1000,15 @@ object DxfParser {
         var maxZ = Float.NEGATIVE_INFINITY
 
         fun updatePoint(x: Float, y: Float, z: Float = 0f) {
-            if (x.isFinite() && abs(x) < 1e12f) {
+            if (x.isFinite() && abs(x) < 1e9f) {
                 if (x < minX) minX = x
                 if (x > maxX) maxX = x
             }
-            if (y.isFinite() && abs(y) < 1e12f) {
+            if (y.isFinite() && abs(y) < 1e9f) {
                 if (y < minY) minY = y
                 if (y > maxY) maxY = y
             }
-            if (z.isFinite() && abs(z) < 1e12f) {
+            if (z.isFinite() && abs(z) < 1e9f) {
                 if (z < minZ) minZ = z
                 if (z > maxZ) maxZ = z
             }
@@ -997,6 +1070,14 @@ object DxfParser {
         }
         if (minZ == Float.POSITIVE_INFINITY || maxZ == Float.NEGATIVE_INFINITY) {
             minZ = 0f; maxZ = 0f
+        }
+
+        // Prevent degenerate 0-dimension bounds
+        if (abs(maxX - minX) < 1e-4f) {
+            minX -= 5f; maxX += 5f
+        }
+        if (abs(maxY - minY) < 1e-4f) {
+            minY -= 5f; maxY += 5f
         }
 
         return BoundingBox3D(minX, maxX, minY, maxY, minZ, maxZ)

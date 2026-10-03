@@ -211,8 +211,9 @@ fun Dxf2DRenderView(
             }
 
             // Render CAD Vector Entities
+            val hasLayerFilter = visibleLayers.isNotEmpty() && visibleLayers.size < model.layers.size
             for (entity in model.entities) {
-                if (visibleLayers.isNotEmpty() && !visibleLayers.contains(entity.layer)) continue
+                if (hasLayerFilter && !visibleLayers.any { it.equals(entity.layer, ignoreCase = true) }) continue
 
                 val color = resolveEntityColor(entity)
                 val strokeStyle = Stroke(width = strokeWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round)

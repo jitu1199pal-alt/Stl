@@ -111,7 +111,7 @@ fun DxfViewerScreen(
     var showLayersSheet by remember { mutableStateOf(false) }
     var showTextsSheet by remember { mutableStateOf(false) }
     var showStatsSheet by remember { mutableStateOf(false) }
-    var cadViewMode by remember { mutableStateOf(CadViewMode.WEBGL_THREE_DXF) }
+    var cadViewMode by remember { mutableStateOf(CadViewMode.VECTOR_CRISP) }
     var showPropertiesDialog by remember { mutableStateOf(false) }
     var showDiagnosticsDialog by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -340,38 +340,38 @@ fun DxfViewerScreen(
                         }
                     }
                 }
-                // DWG CAD View Mode Switcher Strip
-                if (isDwgFile || dxfModel.previewBitmap != null) {
+                // CAD View Mode Switcher Strip (Visible for all CAD drawings)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF0F172A))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF0F172A))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CadModeChip(
-                                title = "⚡ WebGL (AutoCAD)",
-                                isSelected = cadViewMode == CadViewMode.WEBGL_THREE_DXF,
-                                accentColor = Color(0xFF00E5FF),
-                                onClick = { cadViewMode = CadViewMode.WEBGL_THREE_DXF }
-                            )
-                            CadModeChip(
-                                title = "📐 2D Canvas",
-                                isSelected = cadViewMode == CadViewMode.VECTOR_CRISP,
-                                accentColor = Color(0xFF10B981),
-                                onClick = { cadViewMode = CadViewMode.VECTOR_CRISP }
-                            )
-                            CadModeChip(
-                                title = "✨ Dark HD",
-                                isSelected = cadViewMode == CadViewMode.CAD_DARK_HD,
-                                accentColor = Color(0xFFA855F7),
-                                onClick = { cadViewMode = CadViewMode.CAD_DARK_HD }
-                            )
+                        CadModeChip(
+                            title = "📐 2D Canvas (वेक्टर)",
+                            isSelected = cadViewMode == CadViewMode.VECTOR_CRISP,
+                            accentColor = Color(0xFF10B981),
+                            onClick = { cadViewMode = CadViewMode.VECTOR_CRISP }
+                        )
+                        CadModeChip(
+                            title = "⚡ WebGL 3D",
+                            isSelected = cadViewMode == CadViewMode.WEBGL_THREE_DXF,
+                            accentColor = Color(0xFF00E5FF),
+                            onClick = { cadViewMode = CadViewMode.WEBGL_THREE_DXF }
+                        )
+                        CadModeChip(
+                            title = "✨ Dark HD",
+                            isSelected = cadViewMode == CadViewMode.CAD_DARK_HD,
+                            accentColor = Color(0xFFA855F7),
+                            onClick = { cadViewMode = CadViewMode.CAD_DARK_HD }
+                        )
+                        if (dxfModel.previewBitmap != null) {
                             CadModeChip(
                                 title = "📄 Preview",
                                 isSelected = cadViewMode == CadViewMode.ORIGINAL_PREVIEW,
@@ -379,31 +379,31 @@ fun DxfViewerScreen(
                                 onClick = { cadViewMode = CadViewMode.ORIGINAL_PREVIEW }
                             )
                         }
+                    }
 
-                        if (dxfModel.detectedTexts.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF1E293B))
-                                    .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                    .clickable { showTextsSheet = true }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.TextFields,
-                                        contentDescription = null,
-                                        tint = Color(0xFF00E5FF),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Text (${dxfModel.detectedTexts.size})",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF00E5FF)
-                                    )
-                                }
+                    if (dxfModel.detectedTexts.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1E293B))
+                                .border(1.dp, Color(0xFF00E5FF).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .clickable { showTextsSheet = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.TextFields,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Text (${dxfModel.detectedTexts.size})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF00E5FF)
+                                )
                             }
                         }
                     }
@@ -430,6 +430,45 @@ fun DxfViewerScreen(
                             cadViewMode = cadViewMode,
                             modifier = Modifier.fillMaxSize()
                         )
+                    }
+
+                    if (dxfModel.entities.isEmpty() && dxfModel.previewBitmap == null) {
+                        Card(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xEE1E293B)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No Vector Entities Detected",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "This drawing may contain 3D solids or blocks.\nTap Diagnostics to view file details.",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { showDiagnosticsDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("View Diagnostics", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
 
                     // Interactive Measurement Bar (when Measure mode is active)
