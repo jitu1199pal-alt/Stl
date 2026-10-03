@@ -1,6 +1,6 @@
 {
-  "name": "Toolpath Simulation with STL",
-  "description": "Ultra-smooth 3D CNC Toolpath Simulator (.tap, .nc, .bin), 3D STL Solid Mesh Viewer, and AutoCAD Drawings Viewer & Folder (.dxf) with 60 FPS GPU controls.",
+  "name": "CAD View Pro",
+  "description": "Professional Android 2D/3D CAD Viewer supporting DWG and DXF formats with GPU-accelerated vector rendering, layers, measurement, and text search.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

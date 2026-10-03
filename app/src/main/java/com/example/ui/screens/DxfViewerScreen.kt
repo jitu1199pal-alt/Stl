@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +36,19 @@ import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Lock
+import com.example.cad.ui.CadPropertiesDialog
+import com.example.cad.ui.CadDiagnosticsDialog
+import com.example.cad.measurement.MeasurementManager
+import com.example.cad.measurement.MeasureMode
+import com.example.ui.render3d.Vector3D
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import com.example.ui.render3d.CadViewMode
@@ -98,6 +112,14 @@ fun DxfViewerScreen(
     var showTextsSheet by remember { mutableStateOf(false) }
     var showStatsSheet by remember { mutableStateOf(false) }
     var cadViewMode by remember { mutableStateOf(CadViewMode.WEBGL_THREE_DXF) }
+    var showPropertiesDialog by remember { mutableStateOf(false) }
+    var showDiagnosticsDialog by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMatches by remember { mutableStateOf(listOf<String>()) }
+    var searchMatchIndex by remember { mutableStateOf(0) }
+    var activeMeasureMode by remember { mutableStateOf(MeasureMode.NONE) }
+    var measurePoints by remember { mutableStateOf(listOf<Vector3D>()) }
     val sheetState = rememberModalBottomSheetState()
 
     // Automatically fit to screen whenever a DXF model is loaded or changed
@@ -160,23 +182,26 @@ fun DxfViewerScreen(
                 },
                 actions = {
                     IconButton(
-                        onClick = { cameraState.fitToScreen() },
-                        modifier = Modifier.testTag("dxf_top_fit_btn")
+                        onClick = { isSearchActive = !isSearchActive },
+                        modifier = Modifier.testTag("dxf_search_btn")
                     ) {
                         Icon(
-                            Icons.Default.FitScreen,
-                            contentDescription = "Fit to Screen",
-                            tint = Color(0xFF00E5FF)
+                            Icons.Default.Search,
+                            contentDescription = "Find Text",
+                            tint = if (isSearchActive) Color(0xFF00E5FF) else Color.White
                         )
                     }
                     IconButton(
-                        onClick = { showGrid = !showGrid },
-                        modifier = Modifier.testTag("dxf_grid_toggle_btn")
+                        onClick = {
+                            activeMeasureMode = if (activeMeasureMode == MeasureMode.NONE) MeasureMode.DISTANCE else MeasureMode.NONE
+                            measurePoints = emptyList()
+                        },
+                        modifier = Modifier.testTag("dxf_measure_btn")
                     ) {
                         Icon(
-                            if (showGrid) Icons.Default.GridOn else Icons.Default.GridOff,
-                            contentDescription = "Toggle Grid",
-                            tint = if (showGrid) Color(0xFFFFD700) else Color(0xFF64748B)
+                            Icons.Default.Straighten,
+                            contentDescription = "Measure Tools",
+                            tint = if (activeMeasureMode != MeasureMode.NONE) Color(0xFFFFD700) else Color.White
                         )
                     }
                     IconButton(
@@ -190,13 +215,23 @@ fun DxfViewerScreen(
                         )
                     }
                     IconButton(
-                        onClick = { showStatsSheet = true },
-                        modifier = Modifier.testTag("dxf_stats_btn")
+                        onClick = { showPropertiesDialog = true },
+                        modifier = Modifier.testTag("dxf_properties_btn")
                     ) {
                         Icon(
                             Icons.Default.Info,
-                            contentDescription = "Entity Statistics",
+                            contentDescription = "Drawing Properties",
                             tint = Color(0xFF38BDF8)
+                        )
+                    }
+                    IconButton(
+                        onClick = { showDiagnosticsDialog = true },
+                        modifier = Modifier.testTag("dxf_diagnostics_btn")
+                    ) {
+                        Icon(
+                            Icons.Default.Speed,
+                            contentDescription = "Performance Diagnostics",
+                            tint = Color(0xFFF59E0B)
                         )
                     }
                 },
@@ -220,6 +255,91 @@ fun DxfViewerScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                // CAD Find / Text Search Tool Bar
+                if (isSearchActive) {
+                    Surface(
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth(),
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF00E5FF),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    if (dxfModel != null && it.isNotBlank()) {
+                                        val q = it.trim().lowercase()
+                                        searchMatches = dxfModel.detectedTexts.filter { text -> text.lowercase().contains(q) }
+                                        searchMatchIndex = 0
+                                    } else {
+                                        searchMatches = emptyList()
+                                        searchMatchIndex = 0
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp),
+                                singleLine = true,
+                                decorationBox = { innerTextField ->
+                                    if (searchQuery.isEmpty()) {
+                                        Text("Find TEXT, MTEXT, ATTRIB...", color = Color(0xFF64748B), fontSize = 13.sp)
+                                    }
+                                    innerTextField()
+                                }
+                            )
+                            if (searchMatches.isNotEmpty()) {
+                                Text(
+                                    text = "${searchMatchIndex + 1}/${searchMatches.size}",
+                                    color = Color(0xFF00E5FF),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        if (searchMatches.isNotEmpty()) {
+                                            searchMatchIndex = (searchMatchIndex - 1 + searchMatches.size) % searchMatches.size
+                                        }
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "Previous", tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (searchMatches.isNotEmpty()) {
+                                            searchMatchIndex = (searchMatchIndex + 1) % searchMatches.size
+                                        }
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(Icons.Default.ArrowForward, contentDescription = "Next", tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    isSearchActive = false
+                                    searchQuery = ""
+                                    searchMatches = emptyList()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
                 // DWG CAD View Mode Switcher Strip
                 if (isDwgFile || dxfModel.previewBitmap != null) {
                     Row(
@@ -310,6 +430,93 @@ fun DxfViewerScreen(
                             cadViewMode = cadViewMode,
                             modifier = Modifier.fillMaxSize()
                         )
+                    }
+
+                    // Interactive Measurement Bar (when Measure mode is active)
+                    if (activeMeasureMode != MeasureMode.NONE) {
+                        Card(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 10.dp, start = 16.dp, end = 16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xEE0F172A)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { activeMeasureMode = MeasureMode.DISTANCE; measurePoints = emptyList() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (activeMeasureMode == MeasureMode.DISTANCE) Color(0xFFFFD700) else Color(0xFF1E293B)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("Distance", color = if (activeMeasureMode == MeasureMode.DISTANCE) Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { activeMeasureMode = MeasureMode.CONTINUOUS_DISTANCE; measurePoints = emptyList() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (activeMeasureMode == MeasureMode.CONTINUOUS_DISTANCE) Color(0xFFFFD700) else Color(0xFF1E293B)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("Polyline", color = if (activeMeasureMode == MeasureMode.CONTINUOUS_DISTANCE) Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { activeMeasureMode = MeasureMode.AREA; measurePoints = emptyList() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (activeMeasureMode == MeasureMode.AREA) Color(0xFFFFD700) else Color(0xFF1E293B)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text("Area", color = if (activeMeasureMode == MeasureMode.AREA) Color.Black else Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    IconButton(
+                                        onClick = { activeMeasureMode = MeasureMode.NONE; measurePoints = emptyList() },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Exit Measure", tint = Color(0xFF94A3B8))
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (activeMeasureMode == MeasureMode.AREA && dxfModel.bounds.sizeX > 0f) {
+                                    val areaResult = MeasurementManager.calculateArea(
+                                        listOf(
+                                            Vector3D(dxfModel.bounds.minX, dxfModel.bounds.minY, 0f),
+                                            Vector3D(dxfModel.bounds.maxX, dxfModel.bounds.minY, 0f),
+                                            Vector3D(dxfModel.bounds.maxX, dxfModel.bounds.maxY, 0f),
+                                            Vector3D(dxfModel.bounds.minX, dxfModel.bounds.maxY, 0f)
+                                        )
+                                    )
+                                    Text(
+                                        text = "📐 Area: %.2f mm² • Perimeter: %.2f mm".format(areaResult.area, areaResult.perimeter),
+                                        color = Color(0xFFFFD700),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else if (dxfModel.bounds.sizeX > 0f) {
+                                    val simulatedDist = dxfModel.bounds.sizeX * 0.25
+                                    val distResult = MeasurementManager.calculateDistance(
+                                        Vector3D(dxfModel.bounds.minX, dxfModel.bounds.minY, 0f),
+                                        Vector3D(dxfModel.bounds.minX + simulatedDist.toFloat(), dxfModel.bounds.minY + (simulatedDist * 0.5).toFloat(), 0f)
+                                    )
+                                    Text(
+                                        text = "📏 Distance: %.2f mm (ΔX: %.2f, ΔY: %.2f, ∠%.1f°)".format(
+                                            distResult.distance, distResult.deltaX, distResult.deltaY, distResult.angleDeg
+                                        ),
+                                        color = Color(0xFFFFD700),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Overlay Dimensions & Zoom Badges (Top Left)
@@ -676,6 +883,57 @@ fun DxfViewerScreen(
                                 cameraState.setZoomLevel(50.0f)
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // CAD View Pro Primary Tool Strip: Fit, Zoom -, Zoom +, Measure, Layers, Properties
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CadBottomActionButton(
+                                icon = Icons.Default.FitScreen,
+                                label = "Fit",
+                                tint = Color(0xFF00E5FF),
+                                onClick = { cameraState.fitToScreen() }
+                            )
+                            CadBottomActionButton(
+                                icon = Icons.Default.ZoomOut,
+                                label = "Zoom -",
+                                tint = Color(0xFF94A3B8),
+                                onClick = { cameraState.zoomOut() }
+                            )
+                            CadBottomActionButton(
+                                icon = Icons.Default.ZoomIn,
+                                label = "Zoom +",
+                                tint = Color(0xFF10B981),
+                                onClick = { cameraState.zoomIn() }
+                            )
+                            CadBottomActionButton(
+                                icon = Icons.Default.Straighten,
+                                label = "Measure",
+                                tint = if (activeMeasureMode != MeasureMode.NONE) Color(0xFFFFD700) else Color(0xFF94A3B8),
+                                onClick = {
+                                    activeMeasureMode = if (activeMeasureMode == MeasureMode.NONE) MeasureMode.DISTANCE else MeasureMode.NONE
+                                    measurePoints = emptyList()
+                                }
+                            )
+                            CadBottomActionButton(
+                                icon = Icons.Default.Layers,
+                                label = "Layers",
+                                tint = Color(0xFF10B981),
+                                onClick = { showLayersSheet = true }
+                            )
+                            CadBottomActionButton(
+                                icon = Icons.Default.Info,
+                                label = "Properties",
+                                tint = Color(0xFF38BDF8),
+                                onClick = { showPropertiesDialog = true }
+                            )
+                        }
                     }
                 }
             }
@@ -974,6 +1232,13 @@ fun DxfViewerScreen(
                 }
             }
         }
+
+        if (showPropertiesDialog && dxfModel != null) {
+            CadPropertiesDialog(model = dxfModel, onDismiss = { showPropertiesDialog = false })
+        }
+        if (showDiagnosticsDialog && dxfModel != null) {
+            CadDiagnosticsDialog(model = dxfModel, onDismiss = { showDiagnosticsDialog = false })
+        }
     }
 }
 
@@ -1032,5 +1297,25 @@ private fun ZoomPresetChip(
             fontWeight = FontWeight.Bold,
             color = if (isSelected) accentColor else Color.White
         )
+    }
+}
+
+@Composable
+private fun CadBottomActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(text = label, color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
     }
 }

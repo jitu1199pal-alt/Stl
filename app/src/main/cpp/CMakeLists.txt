@@ -22,6 +22,7 @@ file(GLOB_RECURSE LIBDXFRW_SOURCES
 
 add_library(cadconverter SHARED
     cad_bridge.cpp
+    cad_native.cpp
     CadModelReader.cpp
     ${LIBDXFRW_SOURCES}
 )
