@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("cad_native_engine")
+project("cadconverter")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,27 +12,15 @@ set(LIBDXFRW_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libdxfrw)
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${LIBDXFRW_DIR}
+    ${LIBDXFRW_DIR}/intern
 )
 
-set(LIBDXFRW_SOURCES
-    ${LIBDXFRW_DIR}/drw_entities.cpp
-    ${LIBDXFRW_DIR}/drw_header.cpp
-    ${LIBDXFRW_DIR}/drw_objects.cpp
-    ${LIBDXFRW_DIR}/libdwgr.cpp
-    ${LIBDXFRW_DIR}/libdxfrw.cpp
-    ${LIBDXFRW_DIR}/intern/drw_dbg.cpp
-    ${LIBDXFRW_DIR}/intern/drw_textcodec.cpp
-    ${LIBDXFRW_DIR}/intern/dwgbuffer.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader15.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader18.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader21.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader24.cpp
-    ${LIBDXFRW_DIR}/intern/dwgreader27.cpp
-    ${LIBDXFRW_DIR}/intern/dxfreader.cpp
+# Glob any libdxfrw C++ source files if present
+file(GLOB_RECURSE LIBDXFRW_SOURCES
+    "${LIBDXFRW_DIR}/*.cpp"
 )
 
-add_library(cad_native_engine SHARED
+add_library(cadconverter SHARED
     cad_bridge.cpp
     CadModelReader.cpp
     ${LIBDXFRW_SOURCES}
@@ -41,7 +29,7 @@ add_library(cad_native_engine SHARED
 find_library(log-lib log)
 find_library(android-lib android)
 
-target_link_libraries(cad_native_engine
+target_link_libraries(cadconverter
     ${log-lib}
     ${android-lib}
 )

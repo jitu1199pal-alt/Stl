@@ -3,6 +3,7 @@ package com.example.cad.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.util.Base64
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -22,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.parser.DxfModel
-import org.json.JSONObject
 
 class CadJsInterface(
     private val contentProvider: () -> String,
@@ -72,12 +72,20 @@ fun CadWebView(
         )
     }
 
-    // Whenever model changes and page is loaded, evaluate window.loadDxf directly
+    fun passDxfToWebView(webView: WebView, dxfContent: String) {
+        if (dxfContent.isBlank()) return
+        val data = dxfContent.toByteArray(Charsets.UTF_8)
+        val base64Dxf = Base64.encodeToString(data, Base64.NO_WRAP)
+        webView.post {
+            webView.evaluateJavascript("javascript:loadDxfFromBase64('$base64Dxf');", null)
+        }
+    }
+
+    // Whenever model changes and page is loaded, evaluate JavaScript with Base64 encoding
     LaunchedEffect(model, isPageLoaded) {
         val webView = webViewRef
         if (webView != null && isPageLoaded) {
-            val quoted = JSONObject.quote(rawContent)
-            webView.evaluateJavascript("if (window.loadDxf) { window.loadDxf($quoted); }", null)
+            passDxfToWebView(webView, rawContent)
         }
     }
 
@@ -94,6 +102,10 @@ fun CadWebView(
                         domStorageEnabled = true
                         allowFileAccess = true
                         allowContentAccess = true
+                        @Suppress("DEPRECATION")
+                        allowFileAccessFromFileURLs = true
+                        @Suppress("DEPRECATION")
+                        allowUniversalAccessFromFileURLs = true
                         useWideViewPort = true
                         loadWithOverviewMode = true
                         setSupportZoom(true)
@@ -110,12 +122,14 @@ fun CadWebView(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             isPageLoaded = true
-                            val quoted = JSONObject.quote(rawContent)
-                            view?.evaluateJavascript("if (window.loadDxf) { window.loadDxf($quoted); }", null)
+                            if (view != null && rawContent.isNotBlank()) {
+                                passDxfToWebView(view, rawContent)
+                            }
                         }
                     }
 
-                    loadUrl("file:///android_asset/cad_viewer/index.html")
+                    // Load local HTML from assets folder
+                    loadUrl("file:///android_asset/index.html")
                     webViewRef = this
                 }
             },
