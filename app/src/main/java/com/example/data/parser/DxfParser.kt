@@ -280,6 +280,9 @@ object DxfParser {
         var ellipseStartParam = 0f
         var ellipseEndParam = (2 * Math.PI).toFloat()
         var ellipseRatio = 0.5f
+        var extX = 0f
+        var extY = 0f
+        var extZ = 1f
 
         fun resetEntityFields() {
             x1 = 0f; y1 = 0f; z1 = 0f
@@ -290,6 +293,7 @@ object DxfParser {
             ellipseStartParam = 0f
             ellipseEndParam = (2 * Math.PI).toFloat()
             ellipseRatio = 0.5f
+            extX = 0f; extY = 0f; extZ = 1f
             textBuilder.clear()
             blockNameRef = ""
             insertScaleX = 1f; insertScaleY = 1f; insertScaleZ = 1f
@@ -359,7 +363,33 @@ object DxfParser {
                     }
                     is DxfEntity.Arc -> {
                         val tc = transformBlockPoint(src.center, bx, by, bz, insX, insY, insZ, scX, scY, scZ, cosR, sinR)
-                        addEntity(DxfEntity.Arc(effectiveLayer, tc, src.radius * abs(scX), src.startAngleDeg + rotDeg, src.endAngleDeg + rotDeg, src.color ?: entityColor))
+                        val rScaled = src.radius * abs(scX)
+
+                        // Calculate transformed start & end angles rigorously
+                        val radStart = Math.toRadians(src.startAngleDeg.toDouble())
+                        val radEnd = Math.toRadians(src.endAngleDeg.toDouble())
+
+                        val vsX = kotlin.math.cos(radStart) * scX
+                        val vsY = kotlin.math.sin(radStart) * scY
+                        val veX = kotlin.math.cos(radEnd) * scX
+                        val veY = kotlin.math.sin(radEnd) * scY
+
+                        val wsX = vsX * cosR - vsY * sinR
+                        val wsY = vsX * sinR + vsY * cosR
+                        val weX = veX * cosR - veY * sinR
+                        val weY = veX * sinR + veY * cosR
+
+                        var angStart = Math.toDegrees(kotlin.math.atan2(wsY, wsX)).toFloat()
+                        var angEnd = Math.toDegrees(kotlin.math.atan2(weY, weX)).toFloat()
+                        if (angStart < 0f) angStart += 360f
+                        if (angEnd < 0f) angEnd += 360f
+
+                        // If mirrored (reflection: scX * scY < 0), the sweep reverses,
+                        // so CCW arc starts at angEnd and ends at angStart
+                        val finalStart = if (scX * scY < 0f) angEnd else angStart
+                        val finalEnd = if (scX * scY < 0f) angStart else angEnd
+
+                        addEntity(DxfEntity.Arc(effectiveLayer, tc, rScaled, finalStart, finalEnd, src.color ?: entityColor))
                     }
                     is DxfEntity.Polyline -> {
                         val tpts = src.points.map { transformBlockPoint(it, bx, by, bz, insX, insY, insZ, scX, scY, scZ, cosR, sinR) }
@@ -420,14 +450,27 @@ object DxfParser {
                 "CIRCLE" -> {
                     if (radius > 0f) {
                         recordStat("CIRCLE")
-                        val entity = DxfEntity.Circle(currentLayer, Vector3D(x1, y1, z1), radius, resolvedColor)
+                        val cx = if (extZ < -0.001f) -x1 else x1
+                        val entity = DxfEntity.Circle(currentLayer, Vector3D(cx, y1, z1), radius, resolvedColor)
                         addEntity(entity)
                     }
                 }
                 "ARC" -> {
                     if (radius > 0f) {
                         recordStat("ARC")
-                        val entity = DxfEntity.Arc(currentLayer, Vector3D(x1, y1, z1), radius, startAngle, endAngle, resolvedColor)
+                        var cx = x1
+                        var cy = y1
+                        var cz = z1
+                        var sAngle = startAngle
+                        var eAngle = endAngle
+
+                        // AutoCAD Arbitrary Axis Algorithm for mirrored extrusion (Z = -1)
+                        if (extZ < -0.001f) {
+                            cx = -cx
+                            sAngle = (180f - endAngle + 360f) % 360f
+                            eAngle = (180f - startAngle + 360f) % 360f
+                        }
+                        val entity = DxfEntity.Arc(currentLayer, Vector3D(cx, cy, cz), radius, sAngle, eAngle, resolvedColor)
                         addEntity(entity)
                     }
                 }
@@ -438,7 +481,12 @@ object DxfParser {
                     }
                     if (rawPolyVertices.isNotEmpty()) {
                         recordStat("LWPOLYLINE")
-                        val smoothPoints = expandPolylineWithBulges(rawPolyVertices, polyClosed)
+                        val processedVertices = if (extZ < -0.001f) {
+                            rawPolyVertices.map { RawVertex(-it.x, it.y, it.z, -it.bulge) }
+                        } else {
+                            rawPolyVertices
+                        }
+                        val smoothPoints = expandPolylineWithBulges(processedVertices, polyClosed)
                         if (smoothPoints.isNotEmpty()) {
                             val entity = DxfEntity.Polyline(currentLayer, smoothPoints, polyClosed, resolvedColor)
                             addEntity(entity)
@@ -651,6 +699,9 @@ object DxfParser {
                     20 -> currentPolyY = value.toFloatOrNull() ?: 0f
                     30 -> currentPolyZ = value.toFloatOrNull() ?: 0f
                     42 -> currentBulge = value.toFloatOrNull() ?: 0f
+                    210 -> extX = value.toFloatOrNull() ?: 0f
+                    220 -> extY = value.toFloatOrNull() ?: 0f
+                    230 -> extZ = value.toFloatOrNull() ?: 1f
                 }
             } else if (currentType == "SPLINE" || currentType == "LEADER") {
                 when (code) {
@@ -733,6 +784,9 @@ object DxfParser {
                     43 -> insertScaleZ = value.toFloatOrNull() ?: 1f
                     2 -> if (currentType == "INSERT") blockNameRef = value
                     1, 3 -> textBuilder.append(value)
+                    210 -> extX = value.toFloatOrNull() ?: 0f
+                    220 -> extY = value.toFloatOrNull() ?: 0f
+                    230 -> extZ = value.toFloatOrNull() ?: 1f
                 }
             }
         }
@@ -896,7 +950,7 @@ object DxfParser {
         if (vertices.isEmpty()) return emptyList()
         if (vertices.size == 1) return listOf(Vector3D(vertices[0].x, vertices[0].y, vertices[0].z))
 
-        val result = ArrayList<Vector3D>(vertices.size * 4)
+        val result = ArrayList<Vector3D>(vertices.size * 6)
         val count = if (isClosed) vertices.size else vertices.size - 1
 
         for (i in 0 until count) {
@@ -913,33 +967,31 @@ object DxfParser {
                 val chord = hypot(dx, dy)
 
                 if (chord > 1e-5) {
-                    val ux = dx / chord
-                    val uy = dy / chord
-                    // Normal vector pointing to the LEFT of the segment
-                    val nx = -uy
-                    val ny = ux
-
+                    val bD = b.toDouble()
+                    val k = (1.0 - bD * bD) / (4.0 * bD)
                     val mx = (v1.x + v2.x) * 0.5
                     val my = (v1.y + v2.y) * 0.5
 
-                    val theta = 4.0 * kotlin.math.atan(b.toDouble())
-                    val halfTheta = theta * 0.5
-                    val sinHalfTheta = sin(halfTheta)
-                    val cosHalfTheta = cos(halfTheta)
+                    // Exact circle center in AutoCAD 2D coordinates:
+                    val cx = mx - dy * k
+                    val cy = my + dx * k
 
-                    val factor = chord / (2.0 * sinHalfTheta)
-                    val steps = max(12, (abs(theta) / (Math.PI / 24.0)).toInt()).coerceAtMost(64)
+                    val r = hypot(v1.x - cx, v1.y - cy)
 
-                    for (s in 1 until steps) {
-                        val alpha = s.toDouble() / steps
-                        val gamma = (alpha - 0.5) * theta
-                        val along = factor * sin(gamma)
-                        val height = factor * (cos(gamma) - cosHalfTheta)
+                    if (r.isFinite() && r < 1e7) {
+                        val theta = 4.0 * kotlin.math.atan(bD)
+                        val alpha1 = kotlin.math.atan2(v1.y - cy, v1.x - cx)
 
-                        val px = (mx + ux * along + nx * height).toFloat()
-                        val py = (my + uy * along + ny * height).toFloat()
-                        val pz = v1.z + (v2.z - v1.z) * alpha.toFloat()
-                        result.add(Vector3D(px, py, pz))
+                        val steps = max(4, (abs(theta) / (Math.PI / 18.0)).toInt()).coerceAtMost(48)
+
+                        for (s in 1 until steps) {
+                            val t = s.toDouble() / steps.toDouble()
+                            val ang = alpha1 + t * theta
+                            val px = (cx + r * kotlin.math.cos(ang)).toFloat()
+                            val py = (cy + r * kotlin.math.sin(ang)).toFloat()
+                            val pz = v1.z + (v2.z - v1.z) * t.toFloat()
+                            result.add(Vector3D(px, py, pz))
+                        }
                     }
                 }
             }

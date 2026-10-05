@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToProgramViewer = { navController.navigate("program_viewer") },
                                 onNavigateToStlViewer = { navController.navigate("stl_viewer") },
                                 onNavigateToDxfViewer = { navController.navigate("dxf_viewer") },
-                                onNavigateToCadFolder = { navController.navigate("cad_folder") },
+                                onNavigateToCadFolder = { folderType -> navController.navigate("cad_folder/$folderType") },
                                 onNavigateToExcelViewer = { navController.navigate("excel_viewer") },
                                 onNavigateToPdfViewer = { navController.navigate("pdf_viewer") },
                                 onNavigateToSettings = { navController.navigate("settings") },
@@ -82,9 +82,19 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToPrivacy = { navController.navigate("privacy") }
                             )
                         }
+                        composable("cad_folder/{folderType}") { backStackEntry ->
+                            val folderType = backStackEntry.arguments?.getString("folderType") ?: "DXF"
+                            CadFolderScreen(
+                                viewModel = viewModel,
+                                initialFolderType = folderType,
+                                onBack = { navController.popBackStack() },
+                                onNavigateToDxfViewer = { navController.navigate("dxf_viewer") }
+                            )
+                        }
                         composable("cad_folder") {
                             CadFolderScreen(
                                 viewModel = viewModel,
+                                initialFolderType = "DXF",
                                 onBack = { navController.popBackStack() },
                                 onNavigateToDxfViewer = { navController.navigate("dxf_viewer") }
                             )

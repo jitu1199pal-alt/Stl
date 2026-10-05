@@ -72,7 +72,7 @@ fun HomeScreen(
     onNavigateToProgramViewer: () -> Unit,
     onNavigateToStlViewer: () -> Unit,
     onNavigateToDxfViewer: () -> Unit,
-    onNavigateToCadFolder: () -> Unit,
+    onNavigateToCadFolder: (String) -> Unit,
     onNavigateToExcelViewer: () -> Unit,
     onNavigateToPdfViewer: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -127,8 +127,19 @@ fun HomeScreen(
         }
     }
 
-    // Dedicated AutoCAD File Picker: directly opens AutoCAD Drawing Viewer upon selection
-    val autocadFilePicker = rememberLauncherForActivityResult(
+    // Dedicated DXF File Picker: directly opens DXF Drawing Viewer upon selection
+    val dxfFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val resolved = FileTypeResolver.resolve(context, it)
+            viewModel.openResolvedFile(resolved, autoNavigate = false)
+            onNavigateToDxfViewer()
+        }
+    }
+
+    // Dedicated DWG File Picker: directly opens DWG Drawing Viewer upon selection
+    val dwgFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
@@ -277,7 +288,7 @@ fun HomeScreen(
                 }
             }
 
-            // Main Actions Grid - 5 Distinct File Viewers & Folders
+            // Main Actions Grid - 6 Distinct File Viewers & Folders
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -285,7 +296,7 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "FILE VIEWERS & FOLDERS (5 CATEGORIES)",
+                        text = "FILE VIEWERS & FOLDERS (6 CATEGORIES)",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF94A3B8)
@@ -329,54 +340,55 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Folder 3 & Folder 4
+                // Folder 3 & Folder 4: DXF and DWG SEPARATED
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     ActionTile(
-                        title = "3. AutoCAD Drawing",
-                        subtitle = "CAD Vector (.dwg .dxf)",
+                        title = "3. DXF Drawing Folder",
+                        subtitle = "CAD Vector (.dxf)",
                         icon = Icons.Default.Layers,
                         accentColor = Color(0xFF10B981),
                         modifier = Modifier.weight(1f),
-                        onClick = { autocadFilePicker.launch(arrayOf("*/*")) }
+                        onClick = { onNavigateToCadFolder("DXF") }
                     )
                     ActionTile(
-                        title = "4. Excel Spreadsheet",
+                        title = "4. DWG Drawing Folder",
+                        subtitle = "AutoCAD Binary (.dwg)",
+                        icon = Icons.Default.FolderOpen,
+                        accentColor = Color(0xFF00E5FF),
+                        modifier = Modifier.weight(1f),
+                        onClick = { onNavigateToCadFolder("DWG") }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Folder 5 & Folder 6: Excel and PDF
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ActionTile(
+                        title = "5. Excel Spreadsheet",
                         subtitle = "Excel (.xlsx .xls .csv)",
                         icon = Icons.Default.TableChart,
                         accentColor = Color(0xFF34D399),
                         modifier = Modifier.weight(1f),
                         onClick = { excelFilePicker.launch(arrayOf("*/*")) }
                     )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Folder 5
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
                     ActionTile(
-                        title = "5. PDF Document Viewer",
+                        title = "6. PDF Document Viewer",
                         subtitle = "Blueprints & Job Orders (.pdf)",
                         icon = Icons.Default.PictureAsPdf,
                         accentColor = Color(0xFFEF4444),
                         modifier = Modifier.weight(1f),
                         onClick = { pdfFilePicker.launch(arrayOf("*/*")) }
                     )
-                    ActionTile(
-                        title = "CAD Folder Browser",
-                        subtitle = "Browse Device Storage",
-                        icon = Icons.Default.FolderOpen,
-                        accentColor = Color(0xFF059669),
-                        modifier = Modifier.weight(1f),
-                        onClick = onNavigateToCadFolder
-                    )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+            }
 
+            item {
                 // Dedicated Folder 2 Card: 3D STL & CRV3D Relief Viewer
                 Card(
                     modifier = Modifier
@@ -446,7 +458,145 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Dedicated Folder 4 Card: Excel File Viewer
+                // Dedicated Folder 3 Card: DXF Drawing Folder & Viewer
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToCadFolder("DXF") },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF059669)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Layers,
+                                contentDescription = "DXF Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Folder 3: DXF Drawing Viewer",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF10B981), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "DXF CAD",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "DXF वेक्टर ड्राइंग्स देखें (.dxf) • हाई-प्रिसिजन 2D/3D वेक्टर्स व लेयर्स",
+                                fontSize = 11.sp,
+                                color = Color(0xFFA7F3D0)
+                            )
+                        }
+                        Button(
+                            onClick = { dxfFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Select DXF", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Dedicated Folder 4 Card: DWG Drawing Folder & Viewer
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToCadFolder("DWG") },
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2B48)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF0284C7)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = "DWG Viewer",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Folder 4: DWG Drawing Viewer",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFF00E5FF), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "DWG BINARY",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "AutoCAD DWG ड्राइंग्स खोलें (.dwg) • सभी AutoCAD वर्शन समर्थित",
+                                fontSize = 11.sp,
+                                color = Color(0xFFBAE6FD)
+                            )
+                        }
+                        Button(
+                            onClick = { dwgFilePicker.launch(arrayOf("*/*")) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Select DWG", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Dedicated Folder 5 Card: Excel File Viewer
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -478,7 +628,7 @@ fun HomeScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Folder 4: Excel File Viewer",
+                                    text = "Folder 5: Excel File Viewer",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -515,7 +665,7 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Dedicated Folder 5 Card: PDF Document Viewer
+                // Dedicated Folder 6 Card: PDF Document Viewer
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -547,7 +697,7 @@ fun HomeScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Folder 5: PDF Document Viewer",
+                                    text = "Folder 6: PDF Document Viewer",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White

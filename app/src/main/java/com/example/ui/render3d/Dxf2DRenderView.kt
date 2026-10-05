@@ -158,18 +158,12 @@ fun Dxf2DRenderView(
                 val upper = entity.layer.uppercase().trim()
                 return when {
                     upper.contains("RED") || upper.contains("DIM") -> Color(0xFFEF4444)
-                    upper.contains("BLUE") || upper.contains("FRAME") -> Color(0xFF3B82F6)
+                    upper.contains("BLUE") -> Color(0xFF3B82F6)
                     upper.contains("YELLOW") -> Color(0xFFFFD700)
                     upper.contains("GREEN") -> Color(0xFF10B981)
                     upper.contains("CYAN") -> Color(0xFF00E5FF)
                     upper.contains("MAGENTA") -> Color(0xFFFF00FF)
-                    upper == "0" || upper.isEmpty() || upper.contains("WHITE") || upper.contains("GEOM") ||
-                    upper.contains("TORAN") || upper.contains("PILLAR") || upper.contains("CARV") ||
-                    upper.contains("JALI") || upper.contains("BORDER") || upper.contains("DEFPOINTS") -> Color.White
-                    else -> {
-                        val idx = model.layers.indexOf(entity.layer).coerceAtLeast(0)
-                        if (idx == 0) Color.White else layerColors[idx % layerColors.size]
-                    }
+                    else -> Color.White
                 }
             }
 

@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import android.net.Uri
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,12 +39,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,12 +67,23 @@ import com.example.ui.viewmodel.MainViewModel
 @Composable
 fun CadFolderScreen(
     viewModel: MainViewModel,
+    initialFolderType: String = "DXF",
     onBack: () -> Unit,
     onNavigateToDxfViewer: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val recentFiles by viewModel.recentFiles.collectAsState()
-    val cadRecent = recentFiles.filter { it.fileType == "DXF" || it.fileType == "DWG" || it.name.endsWith(".dxf", ignoreCase = true) || it.name.endsWith(".dwg", ignoreCase = true) }
+
+    var activeTab by remember {
+        mutableStateOf(if (initialFolderType.equals("DWG", ignoreCase = true)) 1 else 0)
+    }
+
+    val dxfRecent = recentFiles.filter {
+        it.fileType.equals("DXF", ignoreCase = true) || it.name.endsWith(".dxf", ignoreCase = true)
+    }
+    val dwgRecent = recentFiles.filter {
+        it.fileType.equals("DWG", ignoreCase = true) || it.name.endsWith(".dwg", ignoreCase = true)
+    }
 
     fun queryDisplayName(uri: android.net.Uri): String? {
         try {
@@ -80,11 +100,23 @@ fun CadFolderScreen(
         return null
     }
 
-    val filePicker = rememberLauncherForActivityResult(
+    // Dedicated DXF File Picker
+    val dxfFilePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "autocad_drawing.dxf"
+            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dxf"
+            viewModel.openUri(it, fileName)
+            onNavigateToDxfViewer()
+        }
+    }
+
+    // Dedicated DWG File Picker
+    val dwgFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val fileName = queryDisplayName(it) ?: it.lastPathSegment?.substringAfterLast('/') ?: "drawing.dwg"
             viewModel.openUri(it, fileName)
             onNavigateToDxfViewer()
         }
@@ -92,34 +124,97 @@ fun CadFolderScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "AutoCAD Drawings Folder",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp,
-                            color = Color.White
+            Column {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = if (activeTab == 0) "DXF Drawings Folder" else "DWG Drawings Folder",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (activeTab == 0) "Dedicated .DXF Folder • 2D Vector CAD Engine" else "Dedicated .DWG Folder • AutoCAD Binary Drawing Engine",
+                                fontSize = 11.sp,
+                                color = if (activeTab == 0) Color(0xFF10B981) else Color(0xFF00E5FF)
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            if (activeTab == 0) dxfFilePicker.launch(arrayOf("*/*")) else dwgFilePicker.launch(arrayOf("*/*"))
+                        }) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = "Open CAD",
+                                tint = if (activeTab == 0) Color(0xFF10B981) else Color(0xFF00E5FF)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F172A))
+                )
+
+                // Separate Folders Tabs
+                TabRow(
+                    selectedTabIndex = activeTab,
+                    containerColor = Color(0xFF1E293B),
+                    contentColor = Color.White,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.Indicator(
+                            Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                            color = if (activeTab == 0) Color(0xFF10B981) else Color(0xFF00E5FF),
+                            height = 3.dp
                         )
-                        Text(
-                            text = "ऑटोकेड ड्राइंग्स फ़ोल्डर • 2D/3D DXF CAD Viewer",
-                            fontSize = 11.sp,
-                            color = Color(0xFF10B981)
-                        )
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Open CAD", tint = Color(0xFF10B981))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F172A))
-            )
+                ) {
+                    Tab(
+                        selected = activeTab == 0,
+                        onClick = { activeTab = 0 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = if (activeTab == 0) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "DXF Files (.dxf)",
+                                    fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (activeTab == 0) Color(0xFF10B981) else Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    )
+                    Tab(
+                        selected = activeTab == 1,
+                        onClick = { activeTab = 1 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = if (activeTab == 1) Color(0xFF00E5FF) else Color(0xFF94A3B8),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "DWG Files (.dwg)",
+                                    fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (activeTab == 1) Color(0xFF00E5FF) else Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    )
+                }
+            }
         },
         bottomBar = {
             AdMobBanner()
@@ -133,203 +228,286 @@ fun CadFolderScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Hero Import Folder Card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(50.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF059669)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
-                        }
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Open AutoCAD Drawing",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "Load any .dxf or .dwg AutoCAD drawing from phone folders or SD card",
-                                fontSize = 11.sp,
-                                color = Color(0xFFA7F3D0)
-                            )
-                        }
-                        Button(
-                            onClick = { filePicker.launch(arrayOf("*/*")) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
-                        ) {
-                            Text("Browse", color = Color.Black, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // Folder Sections: Built-in AutoCAD Drawing Library
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "AUTOCAD BLUEPRINT TEMPLATES & DRAWINGS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-            }
-
-            // Drawing 1: Mechanical Flange
-            item {
-                CadDrawingCard(
-                    title = "CNC Flange & Bolt Holes",
-                    subtitle = "sample_flange.dxf",
-                    category = "Mechanical Engineering",
-                    icon = Icons.Default.Build,
-                    accentColor = Color(0xFF00E5FF),
-                    layersInfo = "Outline, Center Bore, Bolt Holes, Specs",
-                    onOpen = {
-                        viewModel.loadSampleDxf()
-                        onNavigateToDxfViewer()
-                    }
-                )
-            }
-
-            // Drawing 2: Architectural Floor Plan
-            item {
-                CadDrawingCard(
-                    title = "Architectural House Layout",
-                    subtitle = "architectural_floor_plan.dxf",
-                    category = "Architectural & Civil",
-                    icon = Icons.Default.Architecture,
-                    accentColor = Color(0xFF10B981),
-                    layersInfo = "Walls, Partitions, Doors, Room Names",
-                    onOpen = {
-                        viewModel.loadArchitecturalDxf()
-                        onNavigateToDxfViewer()
-                    }
-                )
-            }
-
-            // Drawing 3: CNC Slotted Bracket
-            item {
-                CadDrawingCard(
-                    title = "CNC Profiler Bracket Plate",
-                    subtitle = "cnc_bracket_plate.dxf",
-                    category = "CNC Machining & Profiling",
-                    icon = Icons.Default.GridView,
-                    accentColor = Color(0xFFFFD700),
-                    layersInfo = "Outer Contour, Mount Pins, Bearing, Specs",
-                    onOpen = {
-                        viewModel.loadCncBracketDxf()
-                        onNavigateToDxfViewer()
-                    }
-                )
-            }
-
-            // Recent AutoCAD Drawings Section
-            if (cadRecent.isNotEmpty()) {
+            if (activeTab == 0) {
+                // ==================== DXF FOLDER TAB ====================
                 item {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "RECENT AUTOCAD DRAWINGS",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-
-                items(cadRecent.size) { idx ->
-                    val file = cadRecent[idx]
                     Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                try {
-                                    val uri = android.net.Uri.parse(file.uriString)
-                                    viewModel.openUri(uri, file.name)
-                                    onNavigateToDxfViewer()
-                                } catch (e: Exception) {
-                                    viewModel.loadSampleDxf()
-                                    onNavigateToDxfViewer()
-                                }
-                            },
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF064E3B)),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
+                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF0F766E)),
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF059669)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Layers, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                                Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = file.name,
-                                    fontSize = 14.sp,
+                                    text = "DXF Drawing Folder",
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "AutoCAD DXF • ${file.lineOrFaceCount} CAD entities",
+                                    text = "फ़ोन मेमोरी व WhatsApp से कोई भी .dxf CAD ड्राइंग खोलें",
                                     fontSize = 11.sp,
-                                    color = Color(0xFF94A3B8)
+                                    color = Color(0xFFA7F3D0)
                                 )
                             }
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Open", tint = Color(0xFF10B981))
+                            Button(
+                                onClick = { dxfFilePicker.launch(arrayOf("*/*")) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                            ) {
+                                Text("Browse DXF", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
-            }
 
-            // Info guide card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "💡 AutoCAD Compatibility Guide",
+                            text = "DXF TEMPLATES & SAMPLE BLUEPRINTS",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Color.White
+                            color = Color(0xFF94A3B8)
                         )
+                    }
+                }
+
+                item {
+                    CadDrawingCard(
+                        title = "CNC Flange & Bolt Holes",
+                        subtitle = "sample_flange.dxf",
+                        category = "Mechanical Engineering",
+                        icon = Icons.Default.Build,
+                        accentColor = Color(0xFF00E5FF),
+                        layersInfo = "Outline, Center Bore, Bolt Holes, Specs",
+                        onOpen = {
+                            viewModel.loadSampleDxf()
+                            onNavigateToDxfViewer()
+                        }
+                    )
+                }
+
+                item {
+                    CadDrawingCard(
+                        title = "Architectural House Layout",
+                        subtitle = "architectural_floor_plan.dxf",
+                        category = "Architectural & Civil",
+                        icon = Icons.Default.Architecture,
+                        accentColor = Color(0xFF10B981),
+                        layersInfo = "Walls, Partitions, Doors, Room Names",
+                        onOpen = {
+                            viewModel.loadArchitecturalDxf()
+                            onNavigateToDxfViewer()
+                        }
+                    )
+                }
+
+                item {
+                    CadDrawingCard(
+                        title = "CNC Profiler Bracket Plate",
+                        subtitle = "cnc_bracket_plate.dxf",
+                        category = "CNC Machining & Profiling",
+                        icon = Icons.Default.GridView,
+                        accentColor = Color(0xFFFFD700),
+                        layersInfo = "Outer Contour, Mount Pins, Bearing, Specs",
+                        onOpen = {
+                            viewModel.loadCncBracketDxf()
+                            onNavigateToDxfViewer()
+                        }
+                    )
+                }
+
+                // Recent DXF files
+                if (dxfRecent.isNotEmpty()) {
+                    item {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "• Supports DXF from AutoCAD (R12 up to 2024), SolidWorks, DraftSight, LibreCAD, CorelDRAW, and Vectric Aspire.\n• Real-time layer control: toggle wall, dimension, and cutting layers independently.\n• Smooth 2-finger zoom and pan navigation.",
-                            fontSize = 11.sp,
-                            color = Color(0xFF94A3B8),
-                            lineHeight = 16.sp
+                            text = "RECENT DXF DRAWINGS (${dxfRecent.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
                         )
+                    }
+                    items(dxfRecent) { fileItem ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.openUri(Uri.parse(fileItem.uriString), fileItem.name)
+                                    onNavigateToDxfViewer()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = fileItem.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text(text = "${fileItem.fileType} • ${fileItem.lineOrFaceCount} elements", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                }
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFF10B981))
+                            }
+                        }
+                    }
+                }
+            } else {
+                // ==================== DWG FOLDER TAB ====================
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2B48)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF0284C7)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "DWG Drawing Folder",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "फ़ोन मेमोरी व WhatsApp से कोई भी AutoCAD .dwg फ़ाइल खोलें",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFBAE6FD)
+                                )
+                            }
+                            Button(
+                                onClick = { dwgFilePicker.launch(arrayOf("*/*")) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                            ) {
+                                Text("Browse DWG", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Build, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "AutoCAD DWG Compatibility",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "सपोर्टेड वर्शन्स: AutoCAD R14, 2000, 2004, 2007, 2010, 2013, 2018+\n• बाइनरी DWG वेक्टर्स और एंटिटीज़ को ऑटो-कन्वर्ट करके तुरंत दिखाता है।\n• WhatsApp या SD कार्ड से आई .dwg फ़ाइलें एक क्लिक में खुलेंगी।",
+                                fontSize = 11.sp,
+                                color = Color(0xFFCBD5E1),
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+
+                // Recent DWG files
+                if (dwgRecent.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "RECENT DWG DRAWINGS (${dwgRecent.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                    }
+                    items(dwgRecent) { fileItem ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.openUri(Uri.parse(fileItem.uriString), fileItem.name)
+                                    onNavigateToDxfViewer()
+                                },
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(text = fileItem.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text(text = "${fileItem.fileType} • ${fileItem.lineOrFaceCount} elements", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                }
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color(0xFF00E5FF))
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(40.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("कोई DWG फ़ाइल अभी नहीं खोली गई", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Browse DWG बटन दबाकर अपने फ़ोन से .dwg फ़ाइल चुनें", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -350,63 +528,50 @@ private fun CadDrawingCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpen() },
+            .clickable(onClick = onOpen),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
         shape = RoundedCornerShape(14.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(accentColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(24.dp))
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "$category • $subtitle",
-                        fontSize = 11.sp,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-                Button(
-                    onClick = onOpen,
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Open", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(accentColor.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Layers, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Layers: $layersInfo",
-                    fontSize = 11.sp,
-                    color = Color(0xFFCBD5E1)
-                )
+                Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(22.dp))
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(accentColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(text = "DXF", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = accentColor)
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(text = "$category • $subtitle", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(text = "Layers: $layersInfo", fontSize = 10.sp, color = accentColor)
+            }
+            OutlinedButton(
+                onClick = onOpen,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Open", color = Color.White, fontSize = 12.sp)
             }
         }
     }
