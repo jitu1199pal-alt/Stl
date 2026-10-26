@@ -211,6 +211,10 @@ fun ExcelViewerScreen(
     val tabBg = Color(0xFFE8E8E8)
     val activeTabBg = Color(0xFFFFFFFF)
 
+    androidx.activity.compose.BackHandler {
+        onBack()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

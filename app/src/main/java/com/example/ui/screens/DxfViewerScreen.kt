@@ -131,6 +131,24 @@ fun DxfViewerScreen(
 
     val isDwgFile = dxfModel?.fileName?.endsWith(".dwg", ignoreCase = true) == true
 
+    androidx.activity.compose.BackHandler {
+        if (showLayersSheet) {
+            showLayersSheet = false
+        } else if (showTextsSheet) {
+            showTextsSheet = false
+        } else if (showStatsSheet) {
+            showStatsSheet = false
+        } else if (showPropertiesDialog) {
+            showPropertiesDialog = false
+        } else if (showDiagnosticsDialog) {
+            showDiagnosticsDialog = false
+        } else if (isSearchActive) {
+            isSearchActive = false
+        } else {
+            onBack()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

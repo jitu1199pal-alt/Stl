@@ -86,6 +86,10 @@ fun StlViewerScreen(
         Color(0xFF64748B)  // Dark Slate
     )
 
+    androidx.activity.compose.BackHandler {
+        onBack()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

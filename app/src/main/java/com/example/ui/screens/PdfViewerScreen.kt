@@ -145,6 +145,14 @@ fun PdfViewerScreen(
         }
     }
 
+    androidx.activity.compose.BackHandler {
+        if (showJumpDialog) {
+            showJumpDialog = false
+        } else {
+            onBack()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()

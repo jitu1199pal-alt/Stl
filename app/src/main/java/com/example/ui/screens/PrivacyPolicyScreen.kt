@@ -31,6 +31,10 @@ import com.example.ui.components.AdMobBanner
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrivacyPolicyScreen(onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler {
+        onBack()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

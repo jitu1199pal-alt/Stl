@@ -55,6 +55,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showTool3D by remember { mutableStateOf(true) }
     var highFpsMode by remember { mutableStateOf(true) }
 
+    androidx.activity.compose.BackHandler {
+        onBack()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

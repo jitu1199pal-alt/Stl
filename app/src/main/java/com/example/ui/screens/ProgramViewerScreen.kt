@@ -104,6 +104,16 @@ fun ProgramViewerScreen(
     val sheetState = rememberModalBottomSheetState()
     val speedList = listOf(0.25f, 0.5f, 1f, 2f, 4f, 8f, 16f, 32f, 64f, 128f, 256f, 512f, 1024f)
 
+    androidx.activity.compose.BackHandler {
+        if (showOptionsSheet) {
+            showOptionsSheet = false
+        } else if (showGCodeSheet) {
+            showGCodeSheet = false
+        } else {
+            onBack()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(

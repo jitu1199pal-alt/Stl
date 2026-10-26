@@ -122,6 +122,10 @@ fun CadFolderScreen(
         }
     }
 
+    androidx.activity.compose.BackHandler {
+        onBack()
+    }
+
     Scaffold(
         topBar = {
             Column {
